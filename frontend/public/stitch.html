@@ -1,0 +1,273 @@
+﻿<!DOCTYPE html>
+
+<html class="dark" lang="es"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#203cee",
+                        "accent-cyan": "#00f2ff",
+                        "background-light": "#f6f6f8",
+                        "background-dark": "#101322",
+                        "card-dark": "#1a1e36",
+                    },
+                    fontFamily: {
+                        "display": ["Inter", "sans-serif"]
+                    },
+                    borderRadius: {"DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px"},
+                },
+            },
+        }
+    </script>
+<title>SmartPark - GestiÃ³n Inteligente de Talleres</title>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background-light dark:bg-background-dark font-display text-slate-900 dark:text-slate-100">
+<!-- Top Navigation -->
+<nav class="sticky top-0 z-50 border-b border-primary/10 bg-background-dark/80 backdrop-blur-md">
+<div class="mx-auto flex max-w-7xl items-center justify-between p-4">
+<div class="flex items-center gap-2">
+<div class="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/20">
+<span class="material-symbols-outlined text-primary text-3xl">directions_car</span>
+</div>
+<h2 class="text-xl font-bold tracking-tight text-slate-100">SmartPark</h2>
+</div>
+<div class="hidden items-center gap-8 md:flex">
+<a class="text-sm font-medium text-slate-400 hover:text-primary transition-colors" href="#features">Funcionalidades</a>
+<a class="text-sm font-medium text-slate-400 hover:text-primary transition-colors" href="#stats">Impacto</a>
+<a class="text-sm font-medium text-slate-400 hover:text-primary transition-colors" href="#pricing">Precios</a>
+</div>
+<div class="flex items-center gap-4">
+<button class="text-sm font-bold text-slate-300 hover:text-white transition-colors">Iniciar SesiÃ³n</button>
+<button class="hidden rounded-lg bg-primary px-5 py-2.5 text-sm font-bold text-white shadow-lg shadow-primary/20 hover:bg-primary/90 md:block transition-all">
+                    Prueba Gratis
+                </button>
+</div>
+</div>
+</nav>
+<!-- Hero Section -->
+<header class="relative @container">
+<div class="relative flex min-h-[600px] w-full flex-col items-center justify-center overflow-hidden px-4 py-20 text-center @[480px]:min-h-[800px]">
+<!-- Background Image with Overlay -->
+<div class="absolute inset-0 z-0 bg-cover bg-center bg-no-repeat" data-alt="Modern high-tech automotive workshop interior with blurred luxury cars" style='background-image: linear-gradient(to bottom, rgba(16, 19, 34, 0.8), rgba(16, 19, 34, 0.95)), url("https://lh3.googleusercontent.com/aida-public/AB6AXuCuDBjIgOWVS5c9qEJGT7VoQZAIRkYlKfEmEwfLaFQCZX1Pt2EOyofjlv7Yfsx-PlzHyS3mIO3ddhq3jIX01CqLWzf7zekStDS9DnQzT_qVZ5YSbsTVBbX9jUNDrD-5gVyB5lheCDzmxFFLk9nGBIMOd6k9LI57nCm4RykbMwLHIcYW7r2B0aEHDkwD24SdYHcRlKOKTItvYAcfiF7VOxEpaWTIDgtdRK2KCDDVsr4xHpOgAcrDqmo8B4g_RvMzmPec15bzCX5b6uk");'></div>
+<!-- Cyan Glow Decorative Element -->
+<div class="absolute -top-[10%] -left-[10%] h-[40%] w-[40%] rounded-full bg-accent-cyan/10 blur-[120px]"></div>
+<div class="absolute -bottom-[10%] -right-[10%] h-[40%] w-[40%] rounded-full bg-primary/10 blur-[120px]"></div>
+<div class="relative z-10 flex max-w-4xl flex-col items-center gap-6">
+<div class="inline-flex items-center rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-xs font-semibold tracking-wider text-accent-cyan uppercase">
+                    Plataforma SaaS de PrÃ³xima GeneraciÃ³n
+                </div>
+<h1 class="text-4xl font-black leading-tight tracking-tight text-white @[480px]:text-6xl lg:text-7xl">
+                    Gestiona tu Taller y Estacionamiento con <span class="text-transparent bg-clip-text bg-gradient-to-r from-primary to-accent-cyan">Inteligencia</span>
+</h1>
+<p class="max-w-2xl text-lg font-normal leading-relaxed text-slate-400 @[480px]:text-xl">
+                    Optimiza cada proceso de tu negocio con nuestra plataforma diseÃ±ada para la eficiencia operativa, el control financiero y la satisfacciÃ³n del cliente.
+                </p>
+<div class="mt-4 flex flex-col gap-4 sm:flex-row">
+<button class="group relative flex h-14 min-w-[200px] cursor-pointer items-center justify-center overflow-hidden rounded-xl bg-primary px-8 text-base font-bold text-white transition-all hover:scale-105 active:scale-95 shadow-[0_0_20px_rgba(32,60,238,0.4)]">
+<span class="relative z-10">Iniciar SesiÃ³n</span>
+<div class="absolute inset-0 z-0 bg-gradient-to-r from-primary to-accent-cyan opacity-0 group-hover:opacity-100 transition-opacity"></div>
+</button>
+<button class="flex h-14 min-w-[200px] items-center justify-center rounded-xl border border-slate-700 bg-background-dark/50 px-8 text-base font-bold text-white backdrop-blur-sm transition-all hover:bg-slate-800">
+                        Ver Demo
+                    </button>
+</div>
+</div>
+</div>
+</header>
+<!-- Stats Section -->
+<section class="bg-background-dark px-4 py-12" id="stats">
+<div class="mx-auto flex max-w-7xl flex-wrap justify-center gap-6">
+<div class="flex min-w-[280px] flex-1 flex-col gap-3 rounded-2xl border border-primary/10 bg-card-dark p-8 shadow-xl">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-accent-cyan">speed</span>
+<p class="text-sm font-semibold uppercase tracking-wider text-slate-400">Ahorro de Tiempo</p>
+</div>
+<div class="flex items-end gap-2">
+<p class="text-5xl font-black text-white">30%</p>
+<p class="mb-1 text-lg font-bold text-emerald-400">+15% vs industria</p>
+</div>
+<p class="text-sm text-slate-500">Optimización media en procesos diarios de acceso y ocupación.</p>
+</div>
+<div class="flex min-w-[280px] flex-1 flex-col gap-3 rounded-2xl border border-primary/10 bg-card-dark p-8 shadow-xl">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-primary">groups</span>
+<p class="text-sm font-semibold uppercase tracking-wider text-slate-400">Garajes Activos</p>
+</div>
+<div class="flex items-end gap-2">
+<p class="text-5xl font-black text-white">500+</p>
+<p class="mb-1 text-lg font-bold text-emerald-400">+20% este mes</p>
+</div>
+<p class="text-sm text-slate-500">Operadores del sector ya confían en SmartPark.</p>
+</div>
+<div class="flex min-w-[280px] flex-1 flex-col gap-3 rounded-2xl border border-primary/10 bg-card-dark p-8 shadow-xl">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-accent-cyan">star</span>
+<p class="text-sm font-semibold uppercase tracking-wider text-slate-400">SatisfacciÃ³n</p>
+</div>
+<div class="flex items-end gap-2">
+<p class="text-5xl font-black text-white">4.9/5</p>
+<p class="mb-1 text-lg font-bold text-emerald-400">Rating</p>
+</div>
+<p class="text-sm text-slate-500">Basado en reseÃ±as verificadas de usuarios.</p>
+</div>
+</div>
+</section>
+<!-- Features Section -->
+<section class="bg-background-dark px-4 py-24 @container" id="features">
+<div class="mx-auto max-w-7xl">
+<div class="mb-16 flex flex-col gap-4 text-center md:text-left">
+<h2 class="text-3xl font-black tracking-tight text-white @[480px]:text-5xl">
+                    Soluciones <span class="text-primary">Inteligentes</span> para tu Negocio
+                </h2>
+<p class="max-w-2xl text-lg text-slate-400">
+                    DiseÃ±amos herramientas avanzadas que simplifican la complejidad de la gestiÃ³n de vehÃ­culos, permitiÃ©ndote enfocarte en lo que mejor haces.
+                </p>
+</div>
+<div class="grid grid-cols-1 gap-6 md:grid-cols-3">
+<!-- Feature 1 -->
+<div class="group flex flex-col gap-6 rounded-2xl border border-slate-800 bg-card-dark/50 p-8 transition-all hover:border-primary/50 hover:bg-card-dark">
+<div class="flex size-14 items-center justify-center rounded-xl bg-primary/10 text-primary transition-colors group-hover:bg-primary group-hover:text-white">
+<span class="material-symbols-outlined text-3xl">bolt</span>
+</div>
+<div class="flex flex-col gap-3">
+<h3 class="text-xl font-bold text-white">Registro RÃ¡pido</h3>
+<p class="text-slate-400 leading-relaxed">
+                            Ingreso de vehÃ­culos en segundos. Escanea placas o VIN y autocompleta datos del cliente mediante nuestra interfaz tÃ¡ctil optimizada.
+                        </p>
+</div>
+<ul class="flex flex-col gap-2 mt-auto">
+<li class="flex items-center gap-2 text-sm text-slate-500">
+<span class="material-symbols-outlined text-emerald-500 text-sm">check_circle</span> Lectura de QR/Barras
+                        </li>
+<li class="flex items-center gap-2 text-sm text-slate-500">
+<span class="material-symbols-outlined text-emerald-500 text-sm">check_circle</span> App mÃ³vil nativa
+                        </li>
+</ul>
+</div>
+<!-- Feature 2 -->
+<div class="group flex flex-col gap-6 rounded-2xl border border-slate-800 bg-card-dark/50 p-8 transition-all hover:border-primary/50 hover:bg-card-dark">
+<div class="flex size-14 items-center justify-center rounded-xl bg-accent-cyan/10 text-accent-cyan transition-colors group-hover:bg-accent-cyan group-hover:text-background-dark">
+<span class="material-symbols-outlined text-3xl">build</span>
+</div>
+<div class="flex flex-col gap-3">
+<h3 class="text-xl font-bold text-white">Control de Espacios</h3>
+<p class="text-slate-400 leading-relaxed">
+                            Visualiza la ocupación del garaje en tiempo real y mantén actualizado el estado de cada espacio con precisión.
+                        </p>
+</div>
+<ul class="flex flex-col gap-2 mt-auto">
+<li class="flex items-center gap-2 text-sm text-slate-500">
+<span class="material-symbols-outlined text-emerald-500 text-sm">check_circle</span> Mapa visual del garaje
+                        </li>
+<li class="flex items-center gap-2 text-sm text-slate-500">
+<span class="material-symbols-outlined text-emerald-500 text-sm">check_circle</span> Disponibilidad por espacio
+                        </li>
+</ul>
+</div>
+<!-- Feature 3 -->
+<div class="group flex flex-col gap-6 rounded-2xl border border-slate-800 bg-card-dark/50 p-8 transition-all hover:border-primary/50 hover:bg-card-dark">
+<div class="flex size-14 items-center justify-center rounded-xl bg-primary/10 text-primary transition-colors group-hover:bg-primary group-hover:text-white">
+<span class="material-symbols-outlined text-3xl">receipt_long</span>
+</div>
+<div class="flex flex-col gap-3">
+<h3 class="text-xl font-bold text-white">FacturaciÃ³n Automatizada</h3>
+<p class="text-slate-400 leading-relaxed">
+                            Genera facturas, cotizaciones y reportes financieros con un clic. IntegraciÃ³n total con pasarelas de pago y contabilidad regional.
+                        </p>
+</div>
+<ul class="flex flex-col gap-2 mt-auto">
+<li class="flex items-center gap-2 text-sm text-slate-500">
+<span class="material-symbols-outlined text-emerald-500 text-sm">check_circle</span> Factura electrÃ³nica
+                        </li>
+<li class="flex items-center gap-2 text-sm text-slate-500">
+<span class="material-symbols-outlined text-emerald-500 text-sm">check_circle</span> Reportes de rentabilidad
+                        </li>
+</ul>
+</div>
+</div>
+</div>
+</section>
+<!-- CTA Section -->
+<section class="bg-background-dark px-4 py-20">
+<div class="mx-auto max-w-5xl overflow-hidden rounded-3xl bg-gradient-to-br from-primary/20 via-background-dark to-primary/20 p-px">
+<div class="flex flex-col items-center gap-8 rounded-[calc(1.5rem-1px)] bg-card-dark/80 px-8 py-16 text-center backdrop-blur-sm">
+<h2 class="max-w-2xl text-3xl font-black text-white md:text-5xl">
+                    Â¿Listo para digitalizar tu negocio hoy mismo?
+                </h2>
+<p class="max-w-xl text-lg text-slate-400">
+                    Ãšnete a los cientos de profesionales que ya estÃ¡n optimizando sus operaciones con tecnologÃ­a de punta. No te quedes atrÃ¡s.
+                </p>
+<div class="flex w-full flex-col gap-4 sm:w-auto sm:flex-row">
+<button class="flex h-12 items-center justify-center rounded-xl bg-primary px-10 text-base font-bold text-white shadow-xl shadow-primary/20 transition-all hover:scale-105 active:scale-95">
+                        Empezar Ahora
+                    </button>
+<button class="flex h-12 items-center justify-center rounded-xl border border-slate-700 px-10 text-base font-bold text-white transition-all hover:bg-slate-800">
+                        Hablar con un experto
+                    </button>
+</div>
+</div>
+</div>
+</section>
+<!-- Footer -->
+<footer class="border-t border-slate-800 bg-background-dark px-4 py-12">
+<div class="mx-auto max-w-7xl">
+<div class="grid grid-cols-1 gap-12 md:grid-cols-4">
+<div class="col-span-1 flex flex-col gap-4 md:col-span-2">
+<div class="flex items-center gap-2">
+<div class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/20">
+<span class="material-symbols-outlined text-primary text-xl">directions_car</span>
+</div>
+<h2 class="text-xl font-bold text-white">SmartPark</h2>
+</div>
+<p class="max-w-xs text-sm text-slate-500">
+                        La solución definitiva para la gestión de garajes y estacionamientos. Eficiencia, control y tecnología en un solo lugar.
+                    </p>
+<div class="flex gap-4">
+<a class="text-slate-500 hover:text-primary transition-colors" href="#"><span class="material-symbols-outlined">public</span></a>
+<a class="text-slate-500 hover:text-primary transition-colors" href="#"><span class="material-symbols-outlined">mail</span></a>
+<a class="text-slate-500 hover:text-primary transition-colors" href="#"><span class="material-symbols-outlined">phone</span></a>
+</div>
+</div>
+<div>
+<h4 class="mb-4 text-sm font-bold uppercase tracking-widest text-white">Producto</h4>
+<ul class="flex flex-col gap-2 text-sm text-slate-500">
+<li><a class="hover:text-primary" href="#">Funcionalidades</a></li>
+<li><a class="hover:text-primary" href="#">Integraciones</a></li>
+<li><a class="hover:text-primary" href="#">Seguridad</a></li>
+<li><a class="hover:text-primary" href="#">Hoja de ruta</a></li>
+</ul>
+</div>
+<div>
+<h4 class="mb-4 text-sm font-bold uppercase tracking-widest text-white">Empresa</h4>
+<ul class="flex flex-col gap-2 text-sm text-slate-500">
+<li><a class="hover:text-primary" href="#">Sobre nosotros</a></li>
+<li><a class="hover:text-primary" href="#">Blog</a></li>
+<li><a class="hover:text-primary" href="#">Contacto</a></li>
+<li><a class="hover:text-primary" href="#">TÃ©rminos y Privacidad</a></li>
+</ul>
+</div>
+</div>
+<div class="mt-12 flex flex-col items-center justify-between border-t border-slate-800 pt-8 text-sm text-slate-600 md:flex-row">
+<p>Â© 2024 SmartPark Software. Todos los derechos reservados.</p>
+<div class="mt-4 flex gap-6 md:mt-0">
+<a class="hover:text-slate-400" href="#">Privacidad</a>
+<a class="hover:text-slate-400" href="#">Cookies</a>
+<a class="hover:text-slate-400" href="#">Aviso Legal</a>
+</div>
+</div>
+</div>
+</footer>
+</body></html>

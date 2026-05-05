@@ -1,0 +1,18 @@
+﻿<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <clipPath id="smartpark-circle">
+      <circle cx="32" cy="32" r="28" />
+    </clipPath>
+  </defs>
+  <circle cx="32" cy="32" r="31" fill="#031C26" />
+  <circle cx="32" cy="32" r="29" fill="#072359" />
+  <image
+    href="/images/logo-smartpark.png"
+    x="4"
+    y="4"
+    width="56"
+    height="56"
+    clip-path="url(#smartpark-circle)"
+    preserveAspectRatio="xMidYMid slice"
+  />
+</svg>
