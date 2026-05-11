@@ -6,7 +6,7 @@
   --auth-dark-blue: #112d5a;
   --auth-light-blue: #a9d0ec;
   --auth-gradient: linear-gradient(135deg, #112d5a, #a9d0ec);
-  --login-bg-image: url('../assets/login-bg.jpg');
+  --login-bg-image: url('../assets/login-bg.webp');
 }
 
 @property --auth-angle {

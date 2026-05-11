@@ -90,7 +90,7 @@ export default function Landing() {
       </nav>
 
       <header className="landing-hero">
-        <video className="hero-video" autoPlay muted loop playsInline poster="/images/hero-fallback.jpg">
+        <video className="hero-video" autoPlay muted loop playsInline poster="/images/hero-fallback.webp" preload="metadata">
           <source src="/videos/background-loop.mp4" type="video/mp4" />
         </video>
         <div className="hero-overlay" />
@@ -255,4 +255,3 @@ export default function Landing() {
     </div>
   )
 }
-

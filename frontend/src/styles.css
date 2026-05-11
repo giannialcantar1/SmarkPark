@@ -1,12 +1,10 @@
-@import url('https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600&display=swap');
-@import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200');
 
 /* ============================================================
    DESIGN TOKENS — SMARTPARK 2026
    ============================================================ */
 :root {
   color-scheme: dark;
-  --login-bg-image: url('/images/auth-parking-bg.png');
+  --login-bg-image: url('/images/auth-parking-bg.webp');
 
   --bg:            #080f1e;
   --surface:       #0d1a2e;

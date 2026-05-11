@@ -3,6 +3,7 @@ import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 
 import NotificationsBell from './NotificationsBell'
 import { useAuth } from '../contexts/AuthContext'
+import { primeApiCache } from '../lib/api'
 import { ROLES, normalizeRole } from '../lib/roles'
 
 const menuLinks = {
@@ -117,6 +118,43 @@ const INLINE_BELL_ROUTES = new Set([
   '/vehicles/manage',
 ])
 
+const WARM_CACHE_BY_ROLE = {
+  [ROLES.ADMIN]: [
+    '/api/dashboard/stats',
+    '/api/notificaciones',
+    '/api/parking-spaces',
+    '/api/vehiculos',
+    '/api/auth/settings',
+  ],
+  [ROLES.PORTERO]: [
+    '/api/dashboard/stats',
+    '/api/notificaciones',
+    '/api/parking-spaces',
+    '/api/vehiculos',
+  ],
+  [ROLES.OPERADOR]: [
+    '/api/dashboard/stats',
+    '/api/notificaciones',
+    '/api/parking-spaces',
+    '/api/vehiculos',
+  ],
+  [ROLES.SEGURIDAD]: [
+    '/api/dashboard/stats',
+    '/api/notificaciones',
+    '/api/parking-spaces',
+  ],
+  [ROLES.MANTENIMIENTO]: [
+    '/api/dashboard/stats',
+    '/api/parking-spaces',
+  ],
+  [ROLES.USUARIO]: [
+    '/api/notificaciones',
+    '/api/vehiculos',
+    '/api/payments',
+    '/api/auth/settings',
+  ],
+}
+
 export default function PanelLayout({ children }) {
   const { logout, user } = useAuth()
   const navigate = useNavigate()
@@ -143,6 +181,35 @@ export default function PanelLayout({ children }) {
     setBanner(authMessage)
     navigate(location.pathname, { replace: true, state: {} })
   }, [location.pathname, location.state, navigate])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+
+    const warmTargets = WARM_CACHE_BY_ROLE[currentRole] || []
+    if (!warmTargets.length) return
+
+    let cancelled = false
+    const warmCache = () => {
+      if (cancelled) return
+      primeApiCache(warmTargets).catch(() => null)
+    }
+
+    const idleId =
+      typeof window.requestIdleCallback === 'function'
+        ? window.requestIdleCallback(warmCache, { timeout: 1200 })
+        : null
+    const timeoutId = idleId === null ? window.setTimeout(warmCache, 250) : null
+
+    return () => {
+      cancelled = true
+      if (idleId !== null && typeof window.cancelIdleCallback === 'function') {
+        window.cancelIdleCallback(idleId)
+      }
+      if (timeoutId !== null) {
+        window.clearTimeout(timeoutId)
+      }
+    }
+  }, [currentRole])
 
   const handleLogout = async () => {
     await logout()

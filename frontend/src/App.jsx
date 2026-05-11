@@ -1,3 +1,4 @@
+import { Suspense, lazy } from 'react'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 
 import ProtectedRoute from './components/ProtectedRoute'
@@ -6,90 +7,115 @@ import PanelLayout from './components/PanelLayout'
 import { AuthProvider } from './contexts/AuthContext'
 import { ROLES } from './lib/roles'
 
-import AccessAlerts      from './pages/AccessAlerts'
-import ValidateAccessCode from './pages/ValidateAccessCode'
-import AssignParking     from './pages/AssignParking'
-import MonthlyPlans      from './pages/MonthlyPlans'
-import Morosidad         from './pages/Morosidad'
-import Payments          from './pages/Payments'
-import Reservations      from './pages/Reservations'
-import Settings          from './pages/Settings'
-import Dashboard         from './pages/Dashboard'
-import OccupiedSpaces    from './pages/OccupiedSpaces'
-import PendingActivation from './pages/PendingActivation'
-import PersonnelRegistration from './pages/PersonnelRegistration'
-import UserManagement    from './pages/UserManagement'
-import VehicleManagement from './pages/VehicleManagement'
-import ParkingHistory    from './pages/ParkingHistory'
-import VehicleHistory    from './pages/VehicleHistory'
-import Visitors          from './pages/Visitors'
-import Landing           from './pages/Landing'
-import ReleaseParking    from './pages/ReleaseParking'
-import Login             from './pages/Login'
-import LoginSessions     from './pages/LoginSessions'
-import OTPCodes          from './pages/OTPCodes'
-import GatePanel         from './pages/GatePanel'
-import ParkingSpaces     from './pages/ParkingSpaces'
-import Register          from './pages/Register'
-import VerifyOTP         from './pages/VerifyOTP'
-import Reports           from './pages/Reports'
-import NoAccess          from './pages/NoAccess'
-import VehicleLogs       from './pages/VehicleLogs'
-import Vehicles          from './pages/Vehicles'
-import Verify            from './pages/Verify'
+const AccessAlerts = lazy(() => import('./pages/AccessAlerts'))
+const ValidateAccessCode = lazy(() => import('./pages/ValidateAccessCode'))
+const AssignParking = lazy(() => import('./pages/AssignParking'))
+const MonthlyPlans = lazy(() => import('./pages/MonthlyPlans'))
+const Morosidad = lazy(() => import('./pages/Morosidad'))
+const Payments = lazy(() => import('./pages/Payments'))
+const Reservations = lazy(() => import('./pages/Reservations'))
+const Settings = lazy(() => import('./pages/Settings'))
+const Dashboard = lazy(() => import('./pages/Dashboard'))
+const OccupiedSpaces = lazy(() => import('./pages/OccupiedSpaces'))
+const PendingActivation = lazy(() => import('./pages/PendingActivation'))
+const PersonnelRegistration = lazy(() => import('./pages/PersonnelRegistration'))
+const UserManagement = lazy(() => import('./pages/UserManagement'))
+const VehicleManagement = lazy(() => import('./pages/VehicleManagement'))
+const ParkingHistory = lazy(() => import('./pages/ParkingHistory'))
+const VehicleHistory = lazy(() => import('./pages/VehicleHistory'))
+const Visitors = lazy(() => import('./pages/Visitors'))
+const Landing = lazy(() => import('./pages/Landing'))
+const ReleaseParking = lazy(() => import('./pages/ReleaseParking'))
+const Login = lazy(() => import('./pages/Login'))
+const LoginSessions = lazy(() => import('./pages/LoginSessions'))
+const OTPCodes = lazy(() => import('./pages/OTPCodes'))
+const GatePanel = lazy(() => import('./pages/GatePanel'))
+const ParkingSpaces = lazy(() => import('./pages/ParkingSpaces'))
+const Register = lazy(() => import('./pages/Register'))
+const VerifyOTP = lazy(() => import('./pages/VerifyOTP'))
+const Reports = lazy(() => import('./pages/Reports'))
+const NoAccess = lazy(() => import('./pages/NoAccess'))
+const VehicleLogs = lazy(() => import('./pages/VehicleLogs'))
+const Vehicles = lazy(() => import('./pages/Vehicles'))
+const Verify = lazy(() => import('./pages/Verify'))
+
+function RouteFallback() {
+  return (
+    <div
+      style={{
+        minHeight: '38vh',
+        display: 'grid',
+        placeItems: 'center',
+        color: '#cbd5e1',
+        fontWeight: 700,
+        letterSpacing: '0.04em',
+      }}
+    >
+      Cargando modulo...
+    </div>
+  )
+}
+
+function withSuspense(element) {
+  return <Suspense fallback={<RouteFallback />}>{element}</Suspense>
+}
+
+function withPanel(element) {
+  return <PanelLayout>{withSuspense(element)}</PanelLayout>
+}
 
 function App() {
   return (
     <AuthProvider>
       <BrowserRouter>
         <Routes>
-          <Route path="/" element={<Landing />} />
+          <Route path="/" element={withSuspense(<Landing />)} />
 
           <Route element={<PublicRoute />}>
-            <Route path="/login"    element={<Login />} />
-            <Route path="/register" element={<Register />} />
-            <Route path="/verify"   element={<Verify />} />
-            <Route path="/verify-otp" element={<VerifyOTP />} />
+            <Route path="/login"    element={withSuspense(<Login />)} />
+            <Route path="/register" element={withSuspense(<Register />)} />
+            <Route path="/verify"   element={withSuspense(<Verify />)} />
+            <Route path="/verify-otp" element={withSuspense(<VerifyOTP />)} />
           </Route>
 
-          <Route path="/staff-register" element={<PersonnelRegistration mode="public" />} />
-          <Route path="/pending-activation" element={<PendingActivation />} />
-          <Route path="/no-access"          element={<NoAccess />} />
+          <Route path="/staff-register" element={withSuspense(<PersonnelRegistration mode="public" />)} />
+          <Route path="/pending-activation" element={withSuspense(<PendingActivation />)} />
+          <Route path="/no-access"          element={withSuspense(<NoAccess />)} />
 
           {/* Admin + Portero + Personal operativo */}
           <Route element={<ProtectedRoute allowedRoles={[ROLES.ADMIN, ROLES.PORTERO, ROLES.OPERADOR, ROLES.SEGURIDAD, ROLES.MANTENIMIENTO]} />}>
-            <Route path="/dashboard"        element={<PanelLayout><Dashboard /></PanelLayout>} />
-            <Route path="/gate"             element={<PanelLayout><GatePanel /></PanelLayout>} />
-            <Route path="/access-codes"     element={<PanelLayout><ValidateAccessCode /></PanelLayout>} />
-            <Route path="/visitors"         element={<PanelLayout><Visitors /></PanelLayout>} />
-            <Route path="/parking/history"  element={<PanelLayout><ParkingHistory /></PanelLayout>} />
-            <Route path="/parking/occupied" element={<PanelLayout><OccupiedSpaces /></PanelLayout>} />
-            <Route path="/parking/release"  element={<PanelLayout><ReleaseParking /></PanelLayout>} />
+            <Route path="/dashboard"        element={withPanel(<Dashboard />)} />
+            <Route path="/gate"             element={withPanel(<GatePanel />)} />
+            <Route path="/access-codes"     element={withPanel(<ValidateAccessCode />)} />
+            <Route path="/visitors"         element={withPanel(<Visitors />)} />
+            <Route path="/parking/history"  element={withPanel(<ParkingHistory />)} />
+            <Route path="/parking/occupied" element={withPanel(<OccupiedSpaces />)} />
+            <Route path="/parking/release"  element={withPanel(<ReleaseParking />)} />
           </Route>
 
           {/* Admin + Portero + Usuario + Personal operativo */}
           <Route element={<ProtectedRoute allowedRoles={[ROLES.ADMIN, ROLES.PORTERO, ROLES.OPERADOR, ROLES.SEGURIDAD, ROLES.MANTENIMIENTO, ROLES.USUARIO]} />}>
-            <Route path="/parking/assign" element={<PanelLayout><AssignParking /></PanelLayout>} />
-            <Route path="/vehicles"       element={<PanelLayout><Vehicles /></PanelLayout>} />
-            <Route path="/payments"       element={<PanelLayout><Payments /></PanelLayout>} />
-            <Route path="/reservas"       element={<PanelLayout><Reservations /></PanelLayout>} />
-            <Route path="/settings"       element={<PanelLayout><Settings /></PanelLayout>} />
+            <Route path="/parking/assign" element={withPanel(<AssignParking />)} />
+            <Route path="/vehicles"       element={withPanel(<Vehicles />)} />
+            <Route path="/payments"       element={withPanel(<Payments />)} />
+            <Route path="/reservas"       element={withPanel(<Reservations />)} />
+            <Route path="/settings"       element={withPanel(<Settings />)} />
           </Route>
 
           {/* Solo Admin */}
           <Route element={<ProtectedRoute allowedRoles={[ROLES.ADMIN]} />}>
-            <Route path="/parking/spaces"   element={<PanelLayout><ParkingSpaces /></PanelLayout>} />
-            <Route path="/vehicles/manage"  element={<PanelLayout><VehicleManagement /></PanelLayout>} />
-            <Route path="/users"            element={<PanelLayout><UserManagement /></PanelLayout>} />
-            <Route path="/vehicles/history" element={<PanelLayout><VehicleHistory /></PanelLayout>} />
-            <Route path="/reports"          element={<PanelLayout><Reports /></PanelLayout>} />
-            <Route path="/monthly-plans"    element={<PanelLayout><MonthlyPlans /></PanelLayout>} />
-            <Route path="/morosidad"        element={<PanelLayout><Morosidad /></PanelLayout>} />
-            <Route path="/access-alerts"    element={<PanelLayout><AccessAlerts /></PanelLayout>} />
-            <Route path="/vehicle-logs"     element={<PanelLayout><VehicleLogs /></PanelLayout>} />
-            <Route path="/login-sessions"   element={<PanelLayout><LoginSessions /></PanelLayout>} />
-            <Route path="/otp-codes"        element={<PanelLayout><OTPCodes /></PanelLayout>} />
-            <Route path="/personnel"        element={<PanelLayout><PersonnelRegistration mode="admin" /></PanelLayout>} />
+            <Route path="/parking/spaces"   element={withPanel(<ParkingSpaces />)} />
+            <Route path="/vehicles/manage"  element={withPanel(<VehicleManagement />)} />
+            <Route path="/users"            element={withPanel(<UserManagement />)} />
+            <Route path="/vehicles/history" element={withPanel(<VehicleHistory />)} />
+            <Route path="/reports"          element={withPanel(<Reports />)} />
+            <Route path="/monthly-plans"    element={withPanel(<MonthlyPlans />)} />
+            <Route path="/morosidad"        element={withPanel(<Morosidad />)} />
+            <Route path="/access-alerts"    element={withPanel(<AccessAlerts />)} />
+            <Route path="/vehicle-logs"     element={withPanel(<VehicleLogs />)} />
+            <Route path="/login-sessions"   element={withPanel(<LoginSessions />)} />
+            <Route path="/otp-codes"        element={withPanel(<OTPCodes />)} />
+            <Route path="/personnel"        element={withPanel(<PersonnelRegistration mode="admin" />)} />
           </Route>
 
           <Route path="*" element={<Navigate to="/" replace />} />

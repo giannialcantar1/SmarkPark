@@ -10,7 +10,29 @@ const NORMALIZED_API_BASE_URL = API_BASE_URL.replace('http://localhost:5000', 'h
 const BACKEND_API_URL = (NORMALIZED_API_BASE_URL || 'http://127.0.0.1:5000').replace(/\/$/, '')
 const GARAGE_STORAGE_KEY = 'smartpark_garage_id'
 const API_CACHE_PREFIX = 'smartpark_api_cache'
-const API_CACHE_TTL_MS = 10 * 1000
+const DEFAULT_CACHE_POLICY = {
+  freshMs: 60 * 1000,
+  staleMs: 15 * 60 * 1000,
+}
+
+const CACHE_POLICIES = {
+  '/api/auth/me': { freshMs: 2 * 60 * 1000, staleMs: 20 * 60 * 1000 },
+  '/api/auth/settings': { freshMs: 5 * 60 * 1000, staleMs: 30 * 60 * 1000 },
+  '/api/configuracion': { freshMs: 5 * 60 * 1000, staleMs: 30 * 60 * 1000 },
+  '/api/dashboard/stats': { freshMs: 20 * 1000, staleMs: 5 * 60 * 1000 },
+  '/api/notificaciones': { freshMs: 15 * 1000, staleMs: 2 * 60 * 1000 },
+  '/api/alertas-acceso': { freshMs: 15 * 1000, staleMs: 2 * 60 * 1000 },
+  '/api/parking-spaces': { freshMs: 30 * 1000, staleMs: 10 * 60 * 1000 },
+  '/api/parking-spaces/stats': { freshMs: 30 * 1000, staleMs: 10 * 60 * 1000 },
+  '/api/parking-sessions': { freshMs: 30 * 1000, staleMs: 10 * 60 * 1000 },
+  '/api/parking-sessions/active': { freshMs: 20 * 1000, staleMs: 5 * 60 * 1000 },
+  '/api/payments': { freshMs: 30 * 1000, staleMs: 10 * 60 * 1000 },
+  '/api/vehiculos': { freshMs: 30 * 1000, staleMs: 10 * 60 * 1000 },
+  '/api/vehicles': { freshMs: 30 * 1000, staleMs: 10 * 60 * 1000 },
+  '/api/vehicles/logs': { freshMs: 30 * 1000, staleMs: 10 * 60 * 1000 },
+  '/api/visitantes/activos': { freshMs: 30 * 1000, staleMs: 10 * 60 * 1000 },
+  '/api/visitantes/historial': { freshMs: 30 * 1000, staleMs: 10 * 60 * 1000 },
+}
 
 const responseCache = new Map()
 const inflightRequests = new Map()
@@ -393,11 +415,20 @@ function getCacheKey(path) {
   return `${API_CACHE_PREFIX}:${getGarageId()}:${path}`
 }
 
+function getCachePolicy(path) {
+  return CACHE_POLICIES[path] ?? DEFAULT_CACHE_POLICY
+}
+
 function isCacheable(path) {
   return CACHEABLE_PATHS.has(path)
 }
 
-function readPersistedCache(cacheKey) {
+function removePersistedCache(cacheKey) {
+  if (typeof window === 'undefined') return
+  window.sessionStorage.removeItem(cacheKey)
+}
+
+function readPersistedCache(cacheKey, cachePolicy, allowStale = false) {
   if (typeof window === 'undefined') return null
 
   try {
@@ -405,30 +436,40 @@ function readPersistedCache(cacheKey) {
     if (!raw) return null
 
     const entry = JSON.parse(raw)
-    if (!entry?.timestamp || Date.now() - entry.timestamp > API_CACHE_TTL_MS) {
-      window.sessionStorage.removeItem(cacheKey)
+    const ageMs = Date.now() - Number(entry?.timestamp || 0)
+
+    if (!entry?.timestamp || ageMs > cachePolicy.staleMs) {
+      removePersistedCache(cacheKey)
       return null
     }
+
+    if (!allowStale && ageMs > cachePolicy.freshMs) return null
     return entry
   } catch {
-    window.sessionStorage.removeItem(cacheKey)
+    removePersistedCache(cacheKey)
     return null
   }
 }
 
-function getCachedEntry(path) {
+function getCachedEntry(path, options = {}) {
+  const { allowStale = false } = options
   const cacheKey = getCacheKey(path)
+  const cachePolicy = getCachePolicy(path)
   const memoryEntry = responseCache.get(cacheKey)
 
-  if (memoryEntry && Date.now() - memoryEntry.timestamp <= API_CACHE_TTL_MS) {
-    return memoryEntry
-  }
-
   if (memoryEntry) {
-    responseCache.delete(cacheKey)
+    const ageMs = Date.now() - Number(memoryEntry.timestamp || 0)
+    if (ageMs <= cachePolicy.staleMs) {
+      if (allowStale || ageMs <= cachePolicy.freshMs) {
+        return memoryEntry
+      }
+    } else {
+      responseCache.delete(cacheKey)
+      removePersistedCache(cacheKey)
+    }
   }
 
-  const persistedEntry = readPersistedCache(cacheKey)
+  const persistedEntry = readPersistedCache(cacheKey, cachePolicy, allowStale)
   if (persistedEntry) {
     responseCache.set(cacheKey, persistedEntry)
     return persistedEntry
@@ -450,7 +491,7 @@ function setCachedEntry(path, payload) {
 }
 
 export function getCachedApiData(path) {
-  return getCachedEntry(path)?.payload ?? null
+  return getCachedEntry(path, { allowStale: true })?.payload ?? null
 }
 
 export function invalidateApiCache(paths = []) {
