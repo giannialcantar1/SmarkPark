@@ -47,6 +47,12 @@ def create_app() -> Flask:
 
     register_blueprints(app)
     
+    # DEBUG: Imprimir todas las rutas registradas
+    print("\n[DEBUG] Rutas registradas:")
+    for rule in app.url_map.iter_rules():
+        print(f"  {rule.methods} {rule.rule}")
+    print()
+    
     @app.get("/")
     def index():
         return jsonify(

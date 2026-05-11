@@ -5,6 +5,7 @@ from typing import Any
 
 from config import Config
 from services import ParkingService
+from services.user_service import UserService
 from utils.supabase_client import normalize_parking_space, normalize_text, parse_datetime, select_rows, insert_row, update_rows, utcnow, utcnow_iso
 
 
@@ -28,9 +29,18 @@ def _reservation_overlaps(row: dict[str, Any], start_dt, end_dt) -> bool:
     return row_start < end_dt and start_dt < row_end
 
 
+def _reservation_space_id(row: dict[str, Any]) -> str:
+    return str(row.get("parking_space_id") or row.get("espacio_id") or "")
+
+
+def _reservation_status(row: dict[str, Any]) -> str:
+    return str(row.get("estado") or row.get("status") or "").strip().lower()
+
+
 class ReservationService:
     def __init__(self) -> None:
         self.parking_service = ParkingService()
+        self.user_service = UserService()
 
     def _users_by_key(self, *, garage_id: str) -> dict[str, dict[str, Any]]:
         rows = select_rows(
@@ -56,6 +66,20 @@ class ReservationService:
         )
         return {str(row.get("id")): row for row in rows if row.get("id")}
 
+    def _resolve_user_context(self, *, garage_id: str, user_id: str) -> tuple[dict[str, Any] | None, set[str]]:
+        normalized_requested = normalize_text(user_id)
+        user = self.user_service.get_user(user_id=user_id)
+        if user and garage_id and normalize_text(user.get("garage_id")) not in {"", normalize_text(garage_id)}:
+            user = None
+
+        accepted_keys = {
+            normalized_requested,
+            normalize_text((user or {}).get("id")),
+            normalize_text((user or {}).get("auth_user_id")),
+            normalize_text((user or {}).get("user_id")),
+        }
+        return user, {key for key in accepted_keys if key}
+
     def _reservations(self, *, garage_id: str) -> list[dict[str, Any]]:
         return select_rows(
             "reservas",
@@ -77,12 +101,18 @@ class ReservationService:
         vehicles = vehicles or {}
         spaces = spaces or {}
 
-        user = users.get(normalize_text(row.get("user_id"))) or {}
+        user = users.get(normalize_text(row.get("user_id"))) or users.get(normalize_text(row.get("auth_user_id"))) or {}
         vehicle = vehicles.get(str(row.get("vehicle_id") or "")) or {}
-        space = spaces.get(str(row.get("espacio_id") or "")) or {}
+        resolved_space_id = _reservation_space_id(row)
+        resolved_status = _reservation_status(row)
+        space = spaces.get(resolved_space_id) or {}
 
         return {
             **row,
+            "parking_space_id": resolved_space_id or row.get("parking_space_id"),
+            "espacio_id": resolved_space_id or row.get("espacio_id"),
+            "estado": resolved_status or row.get("estado"),
+            "status": resolved_status or row.get("status"),
             "user_name": user.get("name") or user.get("full_name") or user.get("nombre") or user.get("email") or "Usuario",
             "user_email": user.get("email") or "",
             "placa": row.get("placa") or row.get("plate") or vehicle.get("placa") or vehicle.get("plate") or "",
@@ -99,10 +129,14 @@ class ReservationService:
             for space in self.parking_service.list_spaces(garage_id=garage_id)
             if space.get("id")
         }
-        wanted = normalize_text(user_id)
+        _, wanted_keys = self._resolve_user_context(garage_id=garage_id, user_id=user_id)
         rows = []
         for row in self._reservations(garage_id=garage_id):
-            if normalize_text(row.get("user_id")) != wanted:
+            row_keys = {
+                normalize_text(row.get("user_id")),
+                normalize_text(row.get("auth_user_id")),
+            }
+            if not wanted_keys.intersection({key for key in row_keys if key}):
                 continue
             rows.append(self._enrich_row(row, users=users, vehicles=vehicles, spaces=spaces))
         return rows
@@ -114,10 +148,10 @@ class ReservationService:
 
         blocked_space_ids: set[str] = set()
         for row in self._reservations(garage_id=garage_id):
-            if normalize_text(row.get("status")) not in ACTIVE_RESERVATION_STATUSES:
+            if _reservation_status(row) not in ACTIVE_RESERVATION_STATUSES:
                 continue
             if _reservation_overlaps(row, start_dt, end_dt):
-                blocked_space_ids.add(str(row.get("espacio_id") or ""))
+                blocked_space_ids.add(_reservation_space_id(row))
 
         available: list[dict[str, Any]] = []
         now = utcnow()
@@ -165,17 +199,22 @@ class ReservationService:
         if not resolved_plate:
             raise ValueError("Debes seleccionar un vehiculo o indicar una placa")
 
+        user, _ = self._resolve_user_context(garage_id=garage_id, user_id=user_id)
+        stored_user_id = str((user or {}).get("id") or user_id).strip()
+        auth_user_id = str((user or {}).get("auth_user_id") or (user or {}).get("user_id") or user_id).strip()
+
         created = insert_row(
             "reservas",
             {
                 "garage_id": garage_id,
-                "user_id": user_id,
+                "user_id": stored_user_id,
+                "auth_user_id": auth_user_id,
                 "vehicle_id": vehicle_id,
                 "placa": resolved_plate,
-                "espacio_id": espacio_id,
+                "parking_space_id": espacio_id,
                 "fecha_entrada": start_dt.isoformat(),
                 "fecha_salida": end_dt.isoformat(),
-                "status": "reservado",
+                "estado": "reservado",
                 "created_at": utcnow_iso(),
             },
         )
@@ -189,14 +228,20 @@ class ReservationService:
         target = next((row for row in rows if normalize_text(row.get("id")) == normalize_text(reservation_id)), None)
         if not target:
             return None
-        if not is_admin and normalize_text(target.get("user_id")) != normalize_text(user_id):
+        _, allowed_keys = self._resolve_user_context(garage_id=garage_id, user_id=user_id)
+        target_keys = {
+            normalize_text(target.get("user_id")),
+            normalize_text(target.get("auth_user_id")),
+        }
+        if not is_admin and not allowed_keys.intersection({key for key in target_keys if key}):
             return None
 
         update_rows(
             "reservas",
-            payload={"status": "cancelado"},
+            payload={"estado": "cancelado"},
             filters=[{"column": "id", "value": target.get("id"), "optional": False}],
         )
+        target["estado"] = "cancelado"
         target["status"] = "cancelado"
         return target
 
@@ -205,7 +250,7 @@ class ReservationService:
         target = next((row for row in rows if normalize_text(row.get("id")) == normalize_text(reservation_id)), None)
         if not target:
             return None
-        if normalize_text(target.get("status")) not in {"reservado", "activo"}:
+        if _reservation_status(target) not in {"reservado", "activo"}:
             raise ValueError("Solo las reservas activas o reservadas pueden convertirse en entrada")
 
         vehicles = self._vehicles_by_id(garage_id=garage_id)
@@ -222,7 +267,7 @@ class ReservationService:
             usuario_id=str(target.get("user_id") or ""),
             usuario_nombre=user_name,
             placa=plate,
-            espacio_id=str(target.get("espacio_id") or ""),
+            espacio_id=_reservation_space_id(target),
             propietario=user_name,
             modelo=vehicle.get("modelo") or vehicle.get("model"),
             marca=vehicle.get("marca") or vehicle.get("brand"),
@@ -232,10 +277,10 @@ class ReservationService:
 
         update_rows(
             "reservas",
-            payload={"status": "activo"},
+            payload={"estado": "activo"},
             filters=[{"column": "id", "value": target.get("id"), "optional": False}],
         )
         return {
-            "reservation": {**target, "status": "activo"},
+            "reservation": {**target, "estado": "activo", "status": "activo"},
             "entry": result,
         }

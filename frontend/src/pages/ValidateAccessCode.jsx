@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 
+import { useAuth } from '../contexts/AuthContext'
 import { apiGet, apiPost, getCachedApiData } from '../lib/api'
 
 const C = {
@@ -212,9 +213,11 @@ function formatDateTime(value) {
 }
 
 export default function ValidateAccessCode() {
+  const { user } = useAuth()
   const cachedVehicles = getCachedApiData('/api/vehiculos')
   const cachedPending = getCachedApiData('/api/access-codes/pending')
   const hasCache = Boolean(cachedVehicles && cachedPending)
+  const currentGarageId = String(user?.garage_id || user?.garageId || '').trim()
 
   const [vehicles, setVehicles] = useState(() => (Array.isArray(cachedVehicles?.data) ? cachedVehicles.data : []))
   const [pendingCodes, setPendingCodes] = useState(() => (Array.isArray(cachedPending?.data) ? cachedPending.data : []))
@@ -302,7 +305,13 @@ export default function ValidateAccessCode() {
 
     setValidating(true)
     try {
-      const response = await apiPost('/api/access-codes/validate', { code: normalizedCode })
+      const response = await apiPost(
+        '/api/access-codes/validate',
+        { code: normalizedCode },
+        {
+          headers: currentGarageId ? { 'X-Garage-ID': currentGarageId } : {},
+        },
+      )
       setValidatedResult(response?.data || null)
       setSuccess(response?.message || 'Codigo validado correctamente.')
       setCodeInput('')

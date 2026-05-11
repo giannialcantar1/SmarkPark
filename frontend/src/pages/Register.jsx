@@ -25,6 +25,10 @@ function getRegisterErrorMessage(error) {
   return message || 'No se pudo registrar el usuario.'
 }
 
+function getInvitationCode(payload) {
+  return String(payload?.user?.garage_id || payload?.company?.garage_id || '').trim()
+}
+
 export default function Register() {
   const navigate = useNavigate()
   const location = useLocation()
@@ -44,7 +48,10 @@ export default function Register() {
   const [error, setError] = useState(null)
   const [hint, setHint] = useState(null)
   const [submitting, setSubmitting] = useState(false)
+  const [invitationModal, setInvitationModal] = useState({ open: false, code: '', email: '' })
+  const [copiedInvitationCode, setCopiedInvitationCode] = useState(false)
   const panelRef = useRef(null)
+  const copyResetRef = useRef(null)
   const forceAccess = new URLSearchParams(location.search).get('force') === '1'
   const PASSWORD_MIN = 6
   const PASSWORD_MAX = 8
@@ -106,21 +113,53 @@ export default function Register() {
     }
 
     try {
-      await register(email, password, name, {
+      const response = await register(email, password, name, {
         company_name,
         company_address,
         company_phone,
         parking_spaces_count: spacesCount,
       })
-      setHint('Cuenta creada correctamente. Ahora inicia sesion.')
-      window.setTimeout(() => {
-        navigate(`/verify-otp?email=${encodeURIComponent(email)}`)
-      }, 900)
+      const invitationCode = getInvitationCode(response)
+
+      if (invitationCode) {
+        setInvitationModal({ open: true, code: invitationCode, email })
+        setCopiedInvitationCode(false)
+        setHint(null)
+      } else {
+        setHint('Cuenta creada correctamente. Ahora verifica tu correo.')
+        window.setTimeout(() => {
+          navigate(`/verify-otp?email=${encodeURIComponent(email)}`)
+        }, 900)
+      }
     } catch (err) {
       setError(getRegisterErrorMessage(err))
     } finally {
       setSubmitting(false)
     }
+  }
+
+  const handleCopyInvitationCode = async () => {
+    if (!invitationModal.code) return
+
+    try {
+      await navigator.clipboard.writeText(invitationModal.code)
+      setCopiedInvitationCode(true)
+      if (copyResetRef.current) {
+        window.clearTimeout(copyResetRef.current)
+      }
+      copyResetRef.current = window.setTimeout(() => {
+        setCopiedInvitationCode(false)
+      }, 1800)
+    } catch (err) {
+      setError('No se pudo copiar el codigo. Copialo manualmente por favor.')
+    }
+  }
+
+  const handleInvitationModalClose = () => {
+    const nextEmail = invitationModal.email
+    setInvitationModal({ open: false, code: '', email: '' })
+    setCopiedInvitationCode(false)
+    navigate(`/verify-otp?email=${encodeURIComponent(nextEmail)}`)
   }
 
   useEffect(() => {
@@ -130,6 +169,14 @@ export default function Register() {
     }
   }, [])
 
+  useEffect(() => (
+    () => {
+      if (copyResetRef.current) {
+        window.clearTimeout(copyResetRef.current)
+      }
+    }
+  ), [])
+
   useEffect(() => {
     if (!forceAccess || !user) return
     logout().catch(() => null)
@@ -137,7 +184,7 @@ export default function Register() {
 
   useEffect(() => {
     if (!forceAccess && !loading && user) {
-      navigate(getDefaultRouteForRole(user?.role), { replace: true })
+      navigate(getDefaultRouteForRole(user?.role, user?.status || user?.approval_status), { replace: true })
     }
   }, [forceAccess, loading, user, navigate])
 
@@ -336,6 +383,63 @@ export default function Register() {
           </form>
         </div>
       </section>
+
+      {invitationModal.open && (
+        <div className="sp-modal-overlay" role="presentation">
+          <div className="sp-modal" role="dialog" aria-modal="true" aria-labelledby="staff-invitation-title">
+            <div className="sp-modal__header">
+              <div>
+                <p className="auth-modal-eyebrow">Registro completado</p>
+                <h3 id="staff-invitation-title" className="auth-modal-title">
+                  Codigo de invitacion para personal
+                </h3>
+              </div>
+              <button
+                type="button"
+                className="sp-modal__close"
+                aria-label="Continuar a verificacion"
+                onClick={handleInvitationModalClose}
+              >
+                <span className="material-symbols-outlined">close</span>
+              </button>
+            </div>
+
+            <div className="sp-modal__body">
+              <p className="auth-modal-copy">
+                Comparte este codigo con tu personal para que pueda registrarse en <strong>/staff-register</strong>.
+                Tambien podras verlo siempre despues en la configuracion del garaje.
+              </p>
+
+              <div className="auth-modal-code-card">
+                <span className="auth-modal-code-label">Codigo de invitacion</span>
+                <code className="auth-modal-code">{invitationModal.code}</code>
+                <p className="auth-modal-code-note">Este codigo es tu `garage_id`.</p>
+              </div>
+
+              {copiedInvitationCode && <p className="auth-alert success">Codigo copiado al portapapeles.</p>}
+
+              <div className="sp-modal__actions auth-modal-actions">
+                <button
+                  type="button"
+                  className="auth-btn auth-btn-ghost"
+                  onClick={handleCopyInvitationCode}
+                  style={{ width: 'auto', marginTop: 0, paddingInline: 22 }}
+                >
+                  Copiar
+                </button>
+                <button
+                  type="button"
+                  className="auth-btn auth-btn-primary"
+                  onClick={handleInvitationModalClose}
+                  style={{ width: 'auto', marginTop: 0, paddingInline: 22 }}
+                >
+                  Continuar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -32,3 +32,15 @@ def update_user(user_id: str):
 @auth_required
 def delete_user(user_id: str):
     return controller.delete(user_id)
+
+
+@users_bp.get("/personnel/pending")
+@auth_required
+def list_pending_personnel():
+    return controller.list_pending_personnel()
+
+
+@users_bp.post("/personnel/<request_id>/approve")
+@auth_required
+def approve_personnel(request_id: str):
+    return controller.approve_personnel(request_id)

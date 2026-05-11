@@ -93,6 +93,9 @@ def _settings_payload(row: dict[str, Any], user: Any = None) -> dict[str, Any]:
     return {
         "user_id": g.current_user_id,
         "garage_id": garage_id,
+        "staff_invitation_code": garage_id,
+        "staffInvitationCode": garage_id,
+        "invitation_code": garage_id,
         "email": email,
         "name": full_name,
         "full_name": full_name,

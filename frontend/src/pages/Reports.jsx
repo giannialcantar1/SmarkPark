@@ -76,7 +76,20 @@ const formatDuration = (startValue, endValue) => {
   return `${hours}h ${minutes}m`
 }
 
+const getDurationMinutes = (startValue, endValue) => {
+  const start = parseDate(startValue)
+  const end = parseDate(endValue)
+  if (!start) return 0
+  const finish = end || new Date()
+  return Math.max(0, Math.round((finish.getTime() - start.getTime()) / 60000))
+}
+
 const startOfDay = (date) => new Date(date.getFullYear(), date.getMonth(), date.getDate())
+
+const getPeriodLabel = (periodKey) =>
+  PERIODS.find((item) => item.key === periodKey)?.label || periodKey
+
+const getFloorLabel = (floor) => (floor === 'todos' ? 'Todos los pisos' : `Piso ${floor}`)
 
 const isWithinPeriod = (date, periodKey) => {
   if (!date) return false
@@ -152,14 +165,14 @@ const buildDailyTotals = (rows, periodKey) => {
   }))
 }
 
-const buildExportFilename = ({ period, floor }) => {
+const buildExportBaseFilename = ({ period, floor }) => {
   const now = new Date()
   const yyyy = now.getFullYear()
   const mm = String(now.getMonth() + 1).padStart(2, '0')
   const dd = String(now.getDate()).padStart(2, '0')
   const floorLabel = floor === 'todos' ? 'todos-los-pisos' : `piso-${String(floor).toLowerCase()}`
 
-  return `smartpark-reportes-${period}-${floorLabel}-${yyyy}-${mm}-${dd}.csv`
+  return `smartpark-reportes-${period}-${floorLabel}-${yyyy}-${mm}-${dd}`
 }
 
 const buildExportRows = (rows) =>
@@ -176,6 +189,166 @@ const buildExportRows = (rows) =>
     duracion: formatDuration(row.entry, row.exit),
     monto_dop: Number(row.amount || 0).toFixed(2),
   }))
+
+const downloadBlob = ({ filename, blob }) => {
+  const url = window.URL.createObjectURL(blob)
+  const link = document.createElement('a')
+
+  link.href = url
+  link.download = filename
+  link.style.display = 'none'
+
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  window.URL.revokeObjectURL(url)
+}
+
+const drawPdfStatCard = (doc, { x, y, width, height, label, value, accent }) => {
+  doc.setFillColor(248, 250, 252)
+  doc.setDrawColor(226, 232, 240)
+  doc.roundedRect(x, y, width, height, 16, 16, 'FD')
+
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(10)
+  doc.setTextColor(71, 85, 105)
+  doc.text(label, x + 14, y + 18)
+
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(16)
+  doc.setTextColor(...accent)
+  doc.text(String(value), x + 14, y + 42)
+}
+
+const renderChartImage = async ({ type, data, options, width = 900, height = 460 }) => {
+  const chartModule = await import('chart.js/auto')
+  const Chart = chartModule.default || chartModule.Chart
+
+  if (!Chart) {
+    throw new Error('Chart.js no pudo cargarse para exportar el PDF.')
+  }
+
+  const canvas = document.createElement('canvas')
+  canvas.width = width
+  canvas.height = height
+
+  const context = canvas.getContext('2d')
+  context.fillStyle = '#ffffff'
+  context.fillRect(0, 0, width, height)
+
+  const chart = new Chart(context, {
+    type,
+    data,
+    options: {
+      responsive: false,
+      animation: false,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          labels: {
+            color: '#0f172a',
+            font: { family: 'Arial', size: 12, weight: '600' },
+          },
+        },
+        tooltip: { enabled: false },
+      },
+      scales:
+        type === 'pie'
+          ? undefined
+          : {
+              x: {
+                grid: { display: false },
+                ticks: { color: '#475569', font: { family: 'Arial', size: 11 } },
+              },
+              y: {
+                beginAtZero: true,
+                grid: { color: 'rgba(148, 163, 184, 0.25)' },
+                ticks: { color: '#475569', font: { family: 'Arial', size: 11 } },
+              },
+            },
+      ...options,
+    },
+  })
+
+  chart.update('none')
+
+  const dataUrl = canvas.toDataURL('image/png', 1)
+  chart.destroy()
+
+  return dataUrl
+}
+
+const addPdfTable = (doc, { title, columns, rows, startY, marginX = 40 }) => {
+  const pageWidth = doc.internal.pageSize.getWidth()
+  const pageHeight = doc.internal.pageSize.getHeight()
+  const bottomMargin = 40
+  const tableWidth = pageWidth - marginX * 2
+  const columnWidths = columns.map((column) => tableWidth * column.width)
+  let y = startY
+
+  const drawTitle = (label) => {
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(13)
+    doc.setTextColor(15, 23, 42)
+    doc.text(label, marginX, y)
+    y += 14
+  }
+
+  const drawHeader = () => {
+    doc.setFillColor(241, 245, 249)
+    doc.roundedRect(marginX, y, tableWidth, 24, 8, 8, 'F')
+
+    let cellX = marginX + 8
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(9)
+    doc.setTextColor(51, 65, 85)
+    columns.forEach((column, index) => {
+      doc.text(column.label, cellX, y + 16)
+      cellX += columnWidths[index]
+    })
+    y += 30
+  }
+
+  const ensureSpace = (requiredHeight) => {
+    if (y + requiredHeight <= pageHeight - bottomMargin) return
+    doc.addPage()
+    y = 40
+    drawTitle(`${title} (continuación)`)
+    drawHeader()
+  }
+
+  drawTitle(title)
+  drawHeader()
+
+  rows.forEach((row, rowIndex) => {
+    const cellLines = columns.map((column, index) =>
+      doc.splitTextToSize(String(row?.[column.key] ?? ''), Math.max(24, columnWidths[index] - 10)),
+    )
+    const lineCount = Math.max(...cellLines.map((lines) => Math.max(lines.length, 1)))
+    const rowHeight = Math.max(22, lineCount * 10 + 8)
+
+    ensureSpace(rowHeight + 4)
+
+    if (rowIndex % 2 === 0) {
+      doc.setFillColor(248, 250, 252)
+      doc.roundedRect(marginX, y - 2, tableWidth, rowHeight, 6, 6, 'F')
+    }
+
+    let cellX = marginX + 8
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(9)
+    doc.setTextColor(15, 23, 42)
+
+    cellLines.forEach((lines, index) => {
+      doc.text(lines, cellX, y + 10)
+      cellX += columnWidths[index]
+    })
+
+    y += rowHeight + 4
+  })
+
+  return y
+}
 
 const styles = {
   page: {
@@ -210,6 +383,12 @@ const styles = {
     display: 'flex',
     gap: 8,
     flexWrap: 'wrap',
+  },
+  exportRow: {
+    display: 'flex',
+    gap: 10,
+    flexWrap: 'wrap',
+    justifyContent: 'flex-end',
   },
   pill: (active, mode = 'primary') => ({
     borderRadius: 999,
@@ -405,16 +584,37 @@ const styles = {
     color: '#fecaca',
     fontWeight: 600,
   },
-  exportButton: (disabled) => ({
-    borderRadius: 999,
-    padding: '10px 18px',
-    border: `1px solid ${disabled ? 'rgba(148,163,184,0.18)' : 'rgba(34,197,94,0.28)'}`,
-    background: disabled ? 'rgba(15,23,42,0.52)' : 'rgba(34,197,94,0.14)',
-    color: disabled ? 'rgba(148,163,184,0.75)' : '#bbf7d0',
-    fontWeight: 700,
-    cursor: disabled ? 'not-allowed' : 'pointer',
-    fontFamily: 'inherit',
-  }),
+  exportButton: (disabled, tone = 'csv') => {
+    const tones = {
+      csv: {
+        border: 'rgba(34,197,94,0.28)',
+        background: 'rgba(34,197,94,0.14)',
+        color: '#bbf7d0',
+      },
+      pdf: {
+        border: 'rgba(249,115,22,0.28)',
+        background: 'rgba(249,115,22,0.14)',
+        color: '#fed7aa',
+      },
+      powerBi: {
+        border: 'rgba(234,179,8,0.28)',
+        background: 'rgba(234,179,8,0.14)',
+        color: '#fef08a',
+      },
+    }
+    const palette = tones[tone] || tones.csv
+
+    return {
+      borderRadius: 999,
+      padding: '10px 18px',
+      border: `1px solid ${disabled ? 'rgba(148,163,184,0.18)' : palette.border}`,
+      background: disabled ? 'rgba(15,23,42,0.52)' : palette.background,
+      color: disabled ? 'rgba(148,163,184,0.75)' : palette.color,
+      fontWeight: 700,
+      cursor: disabled ? 'not-allowed' : 'pointer',
+      fontFamily: 'inherit',
+    }
+  },
 }
 
 export default function Reports() {
@@ -429,6 +629,7 @@ export default function Reports() {
   const [period, setPeriod] = useState('mes')
   const [floor, setFloor] = useState('todos')
   const [barsAnimated, setBarsAnimated] = useState(false)
+  const [exporting, setExporting] = useState({ pdf: false })
 
   useEffect(() => {
     const timer = window.setTimeout(() => setBarsAnimated(true), 200)
@@ -526,11 +727,42 @@ export default function Reports() {
 
   const chartData = useMemo(() => buildDailyTotals(filteredRows, period), [filteredRows, period])
 
+  const occupancyByFloor = useMemo(() => {
+    const scopedFloors = floor === 'todos'
+      ? availableFloors
+      : availableFloors.filter((item) => item === floor)
+
+    return scopedFloors.map((item) => {
+      const totalSpaces = parqueos.filter((space) => {
+        const spaceFloor = floorIndex.byId.get(String(space.id || '')) || ''
+        return spaceFloor === item
+      }).length
+
+      const occupiedSpaces = parqueos.filter((space) => {
+        const spaceFloor = floorIndex.byId.get(String(space.id || '')) || ''
+        if (spaceFloor !== item) return false
+        const state = String(space?.estado || '').toLowerCase()
+        return state === 'ocupado' || Boolean(space?.ocupado)
+      }).length
+
+      const activeVehicles = rows.filter((row) => row.piso === item && row.status === 'dentro').length
+
+      return {
+        floor: item,
+        totalSpaces,
+        occupiedSpaces,
+        availableSpaces: Math.max(totalSpaces - occupiedSpaces, 0),
+        activeVehicles,
+        occupancyPct: totalSpaces ? Math.round((occupiedSpaces / totalSpaces) * 100) : 0,
+      }
+    })
+  }, [availableFloors, floor, floorIndex, parqueos, rows])
+
   const handleExportCsv = () => {
     if (!filteredRows.length) return
 
     downloadCsv({
-      filename: buildExportFilename({ period, floor }),
+      filename: `${buildExportBaseFilename({ period, floor })}.csv`,
       columns: [
         { key: 'fecha', label: 'Fecha' },
         { key: 'hora', label: 'Hora' },
@@ -546,6 +778,215 @@ export default function Reports() {
       ],
       rows: buildExportRows(filteredRows),
     })
+  }
+
+  const handleExportPdf = async () => {
+    if (!filteredRows.length || exporting.pdf) return
+
+    setExporting((current) => ({ ...current, pdf: true }))
+    setError('')
+
+    try {
+      const [{ jsPDF }] = await Promise.all([import('jspdf')])
+      const selectedPeriodLabel = getPeriodLabel(period)
+      const selectedFloorLabel = getFloorLabel(floor)
+      const generatedAt = new Date()
+      const detailRows = filteredRows.map((row) => ({
+        fecha: `${formatDate(row.exit || row.entry)} ${formatTime(row.exit || row.entry)}`,
+        piso: row.piso || '--',
+        placa: row.placa || 'Sin placa',
+        propietario: row.propietario || 'Sin propietario',
+        duracion: formatDuration(row.entry, row.exit),
+        monto: formatCurrency(row.amount),
+      }))
+
+      const pieChartImage = await renderChartImage({
+        type: 'pie',
+        width: 560,
+        height: 360,
+        data: {
+          labels: ['Ocupados', 'Disponibles'],
+          datasets: [
+            {
+              data: [
+                occupancyStats.occupiedSpaces,
+                Math.max(occupancyStats.totalSpaces - occupancyStats.occupiedSpaces, 0),
+              ],
+              backgroundColor: ['#0ea5e9', '#cbd5e1'],
+              borderColor: '#ffffff',
+              borderWidth: 3,
+            },
+          ],
+        },
+      })
+
+      const revenueChartImage = await renderChartImage({
+        type: 'bar',
+        width: 900,
+        height: 380,
+        data: {
+          labels: chartData.map((item) => item.label),
+          datasets: [
+            {
+              label: 'Ingresos DOP',
+              data: chartData.map((item) => item.value),
+              backgroundColor: ['#0ea5e9', '#38bdf8', '#60a5fa', '#818cf8', '#22c55e', '#14b8a6', '#06b6d4'],
+              borderRadius: 12,
+            },
+          ],
+        },
+      })
+
+      const floorChartImage = await renderChartImage({
+        type: 'bar',
+        width: 900,
+        height: 380,
+        data: {
+          labels: occupancyByFloor.map((item) => `Piso ${item.floor}`),
+          datasets: [
+            {
+              label: 'Ocupacion %',
+              data: occupancyByFloor.map((item) => item.occupancyPct),
+              backgroundColor: '#f59e0b',
+              borderRadius: 12,
+            },
+          ],
+        },
+        options: {
+          scales: {
+            x: {
+              grid: { display: false },
+              ticks: { color: '#475569', font: { family: 'Arial', size: 11 } },
+            },
+            y: {
+              beginAtZero: true,
+              max: 100,
+              grid: { color: 'rgba(148, 163, 184, 0.25)' },
+              ticks: { color: '#475569', font: { family: 'Arial', size: 11 } },
+            },
+          },
+        },
+      })
+
+      const doc = new jsPDF({ unit: 'pt', format: 'a4' })
+      const pageWidth = doc.internal.pageSize.getWidth()
+      const cardGap = 12
+      const cardWidth = (pageWidth - 80 - cardGap) / 2
+
+      doc.setFillColor(248, 250, 252)
+      doc.rect(0, 0, pageWidth, 145, 'F')
+
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(24)
+      doc.setTextColor(15, 23, 42)
+      doc.text('Reporte SmartPark', 40, 54)
+
+      doc.setFont('helvetica', 'normal')
+      doc.setFontSize(11)
+      doc.setTextColor(71, 85, 105)
+      doc.text(`Periodo: ${selectedPeriodLabel}`, 40, 80)
+      doc.text(`Filtro de piso: ${selectedFloorLabel}`, 40, 98)
+      doc.text(
+        `Generado: ${formatDate(generatedAt.toISOString())} ${formatTime(generatedAt.toISOString())}`,
+        40,
+        116,
+      )
+
+      drawPdfStatCard(doc, {
+        x: 40,
+        y: 165,
+        width: cardWidth,
+        height: 58,
+        label: 'Vehiculos del filtro',
+        value: metrics.totalVehiculos,
+        accent: [14, 165, 233],
+      })
+      drawPdfStatCard(doc, {
+        x: 40 + cardWidth + cardGap,
+        y: 165,
+        width: cardWidth,
+        height: 58,
+        label: 'Ingresos del periodo',
+        value: formatCurrency(metrics.ingresos),
+        accent: [34, 197, 94],
+      })
+      drawPdfStatCard(doc, {
+        x: 40,
+        y: 235,
+        width: cardWidth,
+        height: 58,
+        label: 'Ocupacion global',
+        value: `${occupancyStats.occupancyPct}%`,
+        accent: [245, 158, 11],
+      })
+      drawPdfStatCard(doc, {
+        x: 40 + cardWidth + cardGap,
+        y: 235,
+        width: cardWidth,
+        height: 58,
+        label: 'Ticket promedio',
+        value: formatCurrency(metrics.promedio),
+        accent: [99, 102, 241],
+      })
+
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(13)
+      doc.setTextColor(15, 23, 42)
+      doc.text('Distribucion actual de ocupacion', 40, 326)
+      doc.addImage(pieChartImage, 'PNG', 40, 342, pageWidth - 80, 190)
+
+      doc.addPage()
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(13)
+      doc.setTextColor(15, 23, 42)
+      doc.text('Ingresos por periodo', 40, 48)
+      doc.addImage(revenueChartImage, 'PNG', 40, 62, pageWidth - 80, 180)
+
+      doc.text('Ocupacion por piso', 40, 278)
+      doc.addImage(floorChartImage, 'PNG', 40, 292, pageWidth - 80, 170)
+
+      const summaryTableRows = [
+        { indicador: 'Periodo seleccionado', valor: selectedPeriodLabel },
+        { indicador: 'Filtro de piso', valor: selectedFloorLabel },
+        { indicador: 'Vehiculos registrados', valor: String(metrics.totalVehiculos) },
+        { indicador: 'Vehiculos activos', valor: String(occupancyStats.activeVehicles) },
+        { indicador: 'Espacios ocupados', valor: String(occupancyStats.occupiedSpaces) },
+        { indicador: 'Espacios totales', valor: String(occupancyStats.totalSpaces) },
+        { indicador: 'Ingresos del periodo', valor: formatCurrency(metrics.ingresos) },
+        { indicador: 'Ticket promedio', valor: formatCurrency(metrics.promedio) },
+      ]
+
+      addPdfTable(doc, {
+        title: 'Resumen ejecutivo',
+        columns: [
+          { key: 'indicador', label: 'Indicador', width: 0.46 },
+          { key: 'valor', label: 'Valor', width: 0.54 },
+        ],
+        rows: summaryTableRows,
+        startY: 490,
+      })
+
+      doc.addPage()
+      addPdfTable(doc, {
+        title: 'Movimientos del periodo seleccionado',
+        columns: [
+          { key: 'fecha', label: 'Fecha', width: 0.2 },
+          { key: 'piso', label: 'Piso', width: 0.1 },
+          { key: 'placa', label: 'Placa', width: 0.14 },
+          { key: 'propietario', label: 'Propietario', width: 0.24 },
+          { key: 'duracion', label: 'Duracion', width: 0.14 },
+          { key: 'monto', label: 'Monto', width: 0.18 },
+        ],
+        rows: detailRows,
+        startY: 40,
+      })
+
+      doc.save(`${buildExportBaseFilename({ period, floor })}.pdf`)
+    } catch (err) {
+      setError(err.message || 'No se pudo exportar el PDF del reporte.')
+    } finally {
+      setExporting((current) => ({ ...current, pdf: false }))
+    }
   }
 
   const floorCards = useMemo(() => {
@@ -601,14 +1042,24 @@ export default function Reports() {
               </button>
             ))}
           </div>
-          <button
-            type="button"
-            style={styles.exportButton(loading || filteredRows.length === 0)}
-            onClick={handleExportCsv}
-            disabled={loading || filteredRows.length === 0}
-          >
-            Exportar CSV
-          </button>
+          <div style={styles.exportRow}>
+            <button
+              type="button"
+              style={styles.exportButton(loading || filteredRows.length === 0, 'csv')}
+              onClick={handleExportCsv}
+              disabled={loading || filteredRows.length === 0}
+            >
+              Exportar CSV
+            </button>
+            <button
+              type="button"
+              style={styles.exportButton(loading || filteredRows.length === 0 || exporting.pdf, 'pdf')}
+              onClick={handleExportPdf}
+              disabled={loading || filteredRows.length === 0 || exporting.pdf}
+            >
+              {exporting.pdf ? 'Generando PDF...' : 'Exportar PDF'}
+            </button>
+          </div>
         </div>
       </header>
 

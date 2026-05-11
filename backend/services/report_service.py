@@ -1,6 +1,14 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from datetime import datetime
+import io
+import json
+import zipfile
+
+from openpyxl import Workbook
+from openpyxl.styles import Font, PatternFill
+from openpyxl.utils import get_column_letter
 
 from repositories import ParkingSpaceRepository, PaymentRepository, SessionRepository, UserRepository, VehicleRepository
 from utils.supabase_client import normalize_text, parse_datetime, utcnow
@@ -108,3 +116,174 @@ class ReportService:
             role = normalize_text(row.get("rol") or row.get("role")) or "usuario"
             summary["by_role"][role] = summary["by_role"].get(role, 0) + 1
         return summary
+
+    def build_power_bi_import_bundle(self, *, payload: dict, garage_id: str) -> tuple[io.BytesIO, str]:
+        tables = payload.get("tables") if isinstance(payload.get("tables"), dict) else {}
+        table_rows = {
+            "Resumen": self._coerce_rows(tables.get("Resumen") or payload.get("Resumen") or payload.get("resumen")),
+            "Historico": self._coerce_rows(tables.get("Historico") or payload.get("Historico") or payload.get("historico")),
+            "Ocupacion": self._coerce_rows(tables.get("Ocupacion") or payload.get("Ocupacion") or payload.get("ocupacion")),
+            "Ingresos": self._coerce_rows(tables.get("Ingresos") or payload.get("Ingresos") or payload.get("ingresos")),
+        }
+
+        if not any(table_rows.values()):
+            raise ValueError("No se recibieron tablas exportables para Power BI.")
+
+        export_id = str(payload.get("export_id") or utcnow().strftime("%Y%m%d%H%M%S"))
+        exported_at = str(payload.get("exported_at") or utcnow().isoformat())
+        period_label = str(payload.get("period_label") or self._first_value(table_rows["Resumen"], "period_label") or "Periodo")
+        floor_label = str(payload.get("floor_label") or self._first_value(table_rows["Resumen"], "floor_label") or "todos-los-pisos")
+        relationships = payload.get("relationships") if isinstance(payload.get("relationships"), list) else []
+
+        workbook_bytes = self._build_power_bi_workbook(
+            table_rows=table_rows,
+            relationships=relationships,
+            export_id=export_id,
+            exported_at=exported_at,
+            garage_id=garage_id,
+        )
+
+        bundle_payload = {
+            "version": payload.get("version") or "1.0",
+            "source": payload.get("source") or "SmartPark Reports",
+            "export_id": export_id,
+            "exported_at": exported_at,
+            "garage_id": garage_id,
+            "format": "power-bi-import-bundle",
+            "requested_format": "pbix",
+            "tables": table_rows,
+            "relationships": relationships,
+        }
+
+        safe_period = self._slugify(period_label)
+        safe_floor = self._slugify(floor_label)
+        zip_filename = f"smartpark-powerbi-bundle-{safe_period}-{safe_floor}.zip"
+
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+            archive.writestr("README.txt", self._build_power_bi_readme(period_label=period_label, floor_label=floor_label))
+            archive.writestr("manifest.json", json.dumps(bundle_payload, ensure_ascii=False, indent=2).encode("utf-8"))
+            archive.writestr("relationships.json", json.dumps(relationships, ensure_ascii=False, indent=2).encode("utf-8"))
+            archive.writestr("smartpark-powerbi.json", json.dumps(bundle_payload, ensure_ascii=False, indent=2).encode("utf-8"))
+            archive.writestr("smartpark-powerbi.xlsx", workbook_bytes.getvalue())
+
+        zip_buffer.seek(0)
+        return zip_buffer, zip_filename
+
+    @staticmethod
+    def _coerce_rows(value) -> list[dict]:
+        if not isinstance(value, list):
+            return []
+        return [row for row in value if isinstance(row, dict)]
+
+    @staticmethod
+    def _first_value(rows: list[dict], key: str) -> str:
+        for row in rows:
+            value = row.get(key)
+            if value not in (None, ""):
+                return str(value)
+        return ""
+
+    @staticmethod
+    def _slugify(value: str) -> str:
+        normalized = normalize_text(value).replace(" ", "-")
+        clean = "".join(char for char in normalized if char.isalnum() or char in {"-", "_"})
+        return clean.strip("-_") or "export"
+
+    def _build_power_bi_workbook(
+        self,
+        *,
+        table_rows: dict[str, list[dict]],
+        relationships: list[dict],
+        export_id: str,
+        exported_at: str,
+        garage_id: str,
+    ) -> io.BytesIO:
+        workbook = Workbook()
+        default_sheet = workbook.active
+        workbook.remove(default_sheet)
+
+        sheet_order = ["Resumen", "Historico", "Ocupacion", "Ingresos"]
+        for sheet_name in sheet_order:
+            worksheet = workbook.create_sheet(title=sheet_name)
+            self._populate_sheet(worksheet, table_rows.get(sheet_name, []))
+
+        meta_sheet = workbook.create_sheet(title="Meta")
+        metadata_rows = [
+            {"key": "export_id", "value": export_id},
+            {"key": "exported_at", "value": exported_at},
+            {"key": "garage_id", "value": garage_id},
+            {"key": "requested_format", "value": "pbix"},
+            {"key": "actual_format", "value": "power-bi-import-bundle"},
+        ]
+        self._populate_sheet(meta_sheet, metadata_rows)
+
+        relationships_sheet = workbook.create_sheet(title="Relaciones")
+        self._populate_sheet(relationships_sheet, self._coerce_rows(relationships))
+
+        output = io.BytesIO()
+        workbook.save(output)
+        output.seek(0)
+        return output
+
+    def _populate_sheet(self, worksheet, rows: list[dict]) -> None:
+        if not rows:
+            worksheet.append(["info"])
+            worksheet.append(["Sin datos"])
+            worksheet.freeze_panes = "A2"
+            return
+
+        headers = list(rows[0].keys())
+        worksheet.append(headers)
+
+        header_fill = PatternFill(fill_type="solid", fgColor="DCE6F1")
+        header_font = Font(bold=True, color="1F2937")
+
+        for column_index, header in enumerate(headers, start=1):
+            cell = worksheet.cell(row=1, column=column_index)
+            cell.fill = header_fill
+            cell.font = header_font
+
+        for row in rows:
+            worksheet.append([self._excel_value(row.get(header)) for header in headers])
+
+        worksheet.freeze_panes = "A2"
+        worksheet.auto_filter.ref = worksheet.dimensions
+
+        for column_index, header in enumerate(headers, start=1):
+            values = [header]
+            for row in rows:
+                value = row.get(header)
+                values.append("" if value is None else str(value))
+            width = min(max(len(item) for item in values) + 2, 40)
+            worksheet.column_dimensions[get_column_letter(column_index)].width = width
+
+    @staticmethod
+    def _excel_value(value):
+        if value is None:
+            return ""
+        if isinstance(value, (int, float, bool)):
+            return value
+        if isinstance(value, datetime):
+            return value.isoformat()
+        return str(value)
+
+    @staticmethod
+    def _build_power_bi_readme(*, period_label: str, floor_label: str) -> str:
+        return (
+            "SmartPark Power BI Import Bundle\n"
+            "================================\n\n"
+            "Este paquete se genera como alternativa a un .pbix real.\n"
+            "Power BI Desktop no ofrece una ruta oficial soportada para crear o convertir .pbix por código en backend.\n\n"
+            f"Periodo: {period_label}\n"
+            f"Filtro de piso: {floor_label}\n\n"
+            "Contenido:\n"
+            "- smartpark-powerbi.xlsx: workbook con sheets Resumen, Historico, Ocupacion, Ingresos, Meta y Relaciones.\n"
+            "- smartpark-powerbi.json: mismas tablas en JSON.\n"
+            "- relationships.json: relaciones sugeridas para el modelo.\n"
+            "- manifest.json: metadatos del bundle.\n\n"
+            "Uso recomendado en Power BI Desktop:\n"
+            "1. Importar smartpark-powerbi.xlsx o smartpark-powerbi.json.\n"
+            "2. Crear relaciones usando export_id y floor_key segun relationships.json.\n"
+            "3. Guardar el proyecto en Power BI Desktop como .pbix.\n"
+        )

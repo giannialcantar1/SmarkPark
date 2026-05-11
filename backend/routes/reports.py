@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from flask import Blueprint
+from flask_cors import cross_origin
 
 from controllers import ReportController
 from utils.decorators import auth_required
@@ -32,3 +33,14 @@ def vehicles_report():
 @auth_required
 def users_report():
     return controller.users()
+
+
+@reports_bp.post("/export-pbix")
+@cross_origin(
+    origins=["http://localhost:5173"],
+    methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization", "X-Garage-ID"],
+)
+@auth_required
+def export_pbix_report():
+    return controller.export_pbix()

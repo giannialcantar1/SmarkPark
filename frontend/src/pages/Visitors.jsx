@@ -593,12 +593,26 @@ export default function Visitors() {
 
               <label style={styles.label}>
                 <span>Cedula</span>
-                <input value={form.cedula} onChange={handleChange('cedula')} style={styles.input} placeholder="Opcional" />
+                <input
+                  value={form.cedula}
+                  onChange={handleChange('cedula')}
+                  style={styles.input}
+                  placeholder="Opcional"
+                  maxLength={11}
+                  minLength={11}
+                />
               </label>
 
               <label style={styles.label}>
                 <span>Telefono</span>
-                <input value={form.phone} onChange={handleChange('phone')} style={styles.input} placeholder="Opcional" />
+                <input
+                  value={form.phone}
+                  onChange={handleChange('phone')}
+                  style={styles.input}
+                  placeholder="Opcional"
+                  maxLength={10}
+                  minLength={10}
+                />
               </label>
 
               <label style={styles.label}>

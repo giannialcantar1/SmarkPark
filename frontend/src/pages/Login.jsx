@@ -152,6 +152,9 @@ export default function Login() {
             <button type="button" className="auth-btn auth-btn-ghost" onClick={() => navigate('/register?force=1')}>
               Crear cuenta
             </button>
+            <button type="button" className="auth-btn auth-btn-ghost" onClick={() => navigate('/staff-register')}>
+              Registro de personal
+            </button>
           </form>
         </div>
       </section>

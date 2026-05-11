@@ -74,3 +74,22 @@ class UserController:
         if not deleted:
             return jsonify({"success": False, "error": "No fue posible eliminar el usuario"}), 500
         return jsonify({"success": True, "message": "Usuario eliminado"})
+
+    def list_pending_personnel(self):
+        if normalize_text(g.current_user_role) != "admin":
+            return jsonify({"success": False, "error": "Solo un administrador puede revisar solicitudes"}), 403
+
+        pending = self.user_service.list_pending_personnel(garage_id=g.current_user_garage_id)
+        return jsonify({"success": True, "data": pending})
+
+    def approve_personnel(self, request_id: str):
+        if normalize_text(g.current_user_role) != "admin":
+            return jsonify({"success": False, "error": "Solo un administrador puede aprobar personal"}), 403
+
+        approved = self.user_service.approve_personnel_request(
+            garage_id=g.current_user_garage_id,
+            request_id=request_id,
+        )
+        if not approved:
+            return jsonify({"success": False, "error": "Solicitud no encontrada"}), 404
+        return jsonify({"success": True, "message": "Personal aprobado correctamente", "data": approved})

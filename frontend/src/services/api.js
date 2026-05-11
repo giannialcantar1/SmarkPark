@@ -284,6 +284,22 @@ export async function register(email, password, name, company = {}) {
   })
 }
 
+export async function registerStaff({ email, password, name, role, garage_code }) {
+  return apiRequest('/api/auth/staff-register', {
+    method: 'POST',
+    body: {
+      email,
+      password,
+      name,
+      full_name: name,
+      role,
+      garage_code,
+    },
+    requiresAuth: false,
+    skipAuthRedirect: true,
+  })
+}
+
 export async function verifyToken(token = getStoredToken()) {
   if (!token || token === SESSION_TOKEN) {
     return getCurrentUserSession()

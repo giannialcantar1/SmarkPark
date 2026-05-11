@@ -17,6 +17,7 @@ import Settings          from './pages/Settings'
 import Dashboard         from './pages/Dashboard'
 import OccupiedSpaces    from './pages/OccupiedSpaces'
 import PendingActivation from './pages/PendingActivation'
+import PersonnelRegistration from './pages/PersonnelRegistration'
 import UserManagement    from './pages/UserManagement'
 import VehicleManagement from './pages/VehicleManagement'
 import ParkingHistory    from './pages/ParkingHistory'
@@ -51,11 +52,12 @@ function App() {
             <Route path="/verify-otp" element={<VerifyOTP />} />
           </Route>
 
+          <Route path="/staff-register" element={<PersonnelRegistration mode="public" />} />
           <Route path="/pending-activation" element={<PendingActivation />} />
           <Route path="/no-access"          element={<NoAccess />} />
 
-          {/* Admin + Portero */}
-          <Route element={<ProtectedRoute allowedRoles={[ROLES.ADMIN, ROLES.PORTERO]} />}>
+          {/* Admin + Portero + Personal operativo */}
+          <Route element={<ProtectedRoute allowedRoles={[ROLES.ADMIN, ROLES.PORTERO, ROLES.OPERADOR, ROLES.SEGURIDAD, ROLES.MANTENIMIENTO]} />}>
             <Route path="/dashboard"        element={<PanelLayout><Dashboard /></PanelLayout>} />
             <Route path="/gate"             element={<PanelLayout><GatePanel /></PanelLayout>} />
             <Route path="/access-codes"     element={<PanelLayout><ValidateAccessCode /></PanelLayout>} />
@@ -65,8 +67,8 @@ function App() {
             <Route path="/parking/release"  element={<PanelLayout><ReleaseParking /></PanelLayout>} />
           </Route>
 
-          {/* Admin + Portero + Usuario */}
-          <Route element={<ProtectedRoute allowedRoles={[ROLES.ADMIN, ROLES.PORTERO, ROLES.USUARIO]} />}>
+          {/* Admin + Portero + Usuario + Personal operativo */}
+          <Route element={<ProtectedRoute allowedRoles={[ROLES.ADMIN, ROLES.PORTERO, ROLES.OPERADOR, ROLES.SEGURIDAD, ROLES.MANTENIMIENTO, ROLES.USUARIO]} />}>
             <Route path="/parking/assign" element={<PanelLayout><AssignParking /></PanelLayout>} />
             <Route path="/vehicles"       element={<PanelLayout><Vehicles /></PanelLayout>} />
             <Route path="/payments"       element={<PanelLayout><Payments /></PanelLayout>} />
@@ -87,6 +89,7 @@ function App() {
             <Route path="/vehicle-logs"     element={<PanelLayout><VehicleLogs /></PanelLayout>} />
             <Route path="/login-sessions"   element={<PanelLayout><LoginSessions /></PanelLayout>} />
             <Route path="/otp-codes"        element={<PanelLayout><OTPCodes /></PanelLayout>} />
+            <Route path="/personnel"        element={<PanelLayout><PersonnelRegistration mode="admin" /></PanelLayout>} />
           </Route>
 
           <Route path="*" element={<Navigate to="/" replace />} />

@@ -9,6 +9,7 @@ import {
 } from 'react'
 
 import { supabase } from '../lib/supabase'
+import { isPendingApproval } from '../lib/roles'
 import {
   apiRequest,
   clearStoredAuth,
@@ -31,6 +32,8 @@ function buildSessionUser(session) {
     name: metadata.full_name || metadata.name || sessionUser?.email || 'Usuario',
     full_name: metadata.full_name || metadata.name || sessionUser?.email || 'Usuario',
     role: metadata.role || sessionUser?.role || 'usuario',
+    status: metadata.approval_status || metadata.status || '',
+    approval_status: metadata.approval_status || metadata.status || '',
     garage_id: metadata.garage_id || '',
     avatar_url: metadata.avatar_url || metadata.picture || '',
     user_metadata: metadata,
@@ -70,6 +73,7 @@ export function AuthProvider({ children }) {
           ...(nextSession.user.user_metadata || {}),
           role: profile?.role || fallbackUser?.role,
           garage_id: profile?.garage_id || fallbackUser?.garage_id,
+          approval_status: profile?.approval_status || profile?.status || fallbackUser?.approval_status || '',
           name: profile?.name || fallbackUser?.name,
           full_name: profile?.name || fallbackUser?.full_name,
         },
@@ -112,6 +116,14 @@ export function AuthProvider({ children }) {
     if (error) throw error
 
     const authenticatedUser = await syncSession(data.session ?? null)
+    if (isPendingApproval(authenticatedUser?.status || authenticatedUser?.approval_status)) {
+      try {
+        await supabase.auth.signOut()
+      } finally {
+        await syncSession(null)
+      }
+      throw new Error('Tu cuenta de personal está pendiente de aprobación por un administrador.')
+    }
     return { session: data.session ?? null, user: authenticatedUser }
   }, [syncSession])
 

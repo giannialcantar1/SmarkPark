@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from flask import g, jsonify
+from flask import g, jsonify, request, send_file
 
 from services import ReportService
 
@@ -22,3 +22,25 @@ class ReportController:
 
     def users(self):
         return jsonify({"success": True, "data": self.report_service.generate_user_report(garage_id=g.current_user_garage_id)})
+
+    def export_pbix(self):
+        payload = request.get_json(silent=True) or {}
+
+        try:
+            export_file, filename = self.report_service.build_power_bi_import_bundle(
+                payload=payload,
+                garage_id=g.current_user_garage_id,
+            )
+        except ValueError as exc:
+            return jsonify({"success": False, "error": str(exc)}), 400
+
+        response = send_file(
+            export_file,
+            mimetype="application/zip",
+            as_attachment=True,
+            download_name=filename,
+        )
+        response.headers["X-SmartPark-Requested-Format"] = "pbix"
+        response.headers["X-SmartPark-Actual-Format"] = "power-bi-import-bundle"
+        response.headers["X-SmartPark-Actual-Extension"] = ".zip"
+        return response

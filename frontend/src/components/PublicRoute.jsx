@@ -17,7 +17,7 @@ export default function PublicRoute() {
   }
 
   if (user) {
-    return <Navigate to={getDefaultRouteForRole(user?.role)} replace />
+    return <Navigate to={getDefaultRouteForRole(user?.role, user?.status || user?.approval_status)} replace />
   }
 
   return <Outlet />

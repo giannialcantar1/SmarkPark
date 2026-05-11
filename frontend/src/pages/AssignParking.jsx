@@ -610,6 +610,24 @@ export default function AssignParkings() {
 
   const handleChange = (field) => (e) => setForm((f) => ({ ...f, [field]: e.target.value }))
 
+  const handlePlateChange = (e) => {
+    const raw = e.target.value.toUpperCase()
+    let filtered = ''
+    let letterCount = 0
+    let digitCount = 0
+    for (const char of raw) {
+      if (letterCount < 3 && /[A-Z]/.test(char)) {
+        filtered += char
+        letterCount++
+      } else if (letterCount === 3 && digitCount < 3 && /[0-9]/.test(char)) {
+        filtered += char
+        digitCount++
+      }
+      if (letterCount === 3 && digitCount === 3) break
+    }
+    setForm((f) => ({ ...f, placa: filtered }))
+  }
+
   const resetForm = () => {
     setForm(INITIAL_FORM)
     espacioRef.current?.focus()
@@ -622,7 +640,8 @@ export default function AssignParkings() {
     setError(null); setSuccess(null)
     if (!form.espacioId) { setError('Debe seleccionar un espacio.'); espacioRef.current?.focus(); return }
     if (selectedOccupied) { setError('El espacio seleccionado ya está ocupado. Elija otro espacio libre.'); return }
-    if (!form.placa.trim()) { setError('El número de placa es obligatorio.'); return }
+    const plateRegex = /^[A-Z]{3}[0-9]{3}$/
+    if (!plateRegex.test(form.placa.trim())) { setError('La placa debe tener exactamente 3 letras y 3 números (ej: ABC123).'); return }
     if (!form.propietario.trim()) { setError('El nombre del propietario es obligatorio.'); return }
     setSaving(true)
     try {
@@ -783,8 +802,9 @@ export default function AssignParkings() {
                       <input
                         type="text"
                         value={form.placa}
-                        onChange={handleChange('placa')}
-                        placeholder="EJ: ABC-1234"
+                        onChange={handlePlateChange}
+                        placeholder="ABC123"
+                        maxLength={6}
                         required
                         style={s.inputBase}
                       />

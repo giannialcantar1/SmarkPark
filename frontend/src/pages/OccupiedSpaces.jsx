@@ -1,19 +1,15 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 
 import ModalEntry from '../components/ModalEntry'
-import ModalExit from '../components/ModalExit'
 import NotificationsBell from '../components/NotificationsBell'
 import { apiGet, getCachedApiData } from '../lib/api'
 
-/* --- Tarifas --- */
 const TARIFAS = [
   { label: 'Fracción (15 min)', value: 'RD$ 5.00' },
   { label: 'Hora completa',     value: 'RD$ 15.00' },
   { label: 'Día completo (12h+)', value: 'RD$ 120.00' },
 ]
 
-/* --- Helpers --- */
 const formatSince = (value) => {
   if (!value) return 'Sin hora registrada'
   const start = new Date(value)
@@ -69,7 +65,6 @@ const buildOccupancyData = (spacesPayload, vehiclesPayload) => {
   return { mergedSpaces, occupancy }
 }
 
-/* --- Palette --- */
 const C = {
   bg:        'var(--bg)',
   card:      'var(--surface)',
@@ -84,227 +79,57 @@ const C = {
   warning:   'var(--accent)',
 }
 
-/* --- Styles --- */
 const s = {
-  page: {
-    width: '100%',
-    maxWidth: 1440,
-    margin: '0 auto',
-    fontFamily: "'DM Sans', 'Inter', system-ui, sans-serif",
-  },
-
-  topbar: {
-    display: 'flex',
-    justifyContent: 'flex-end',
-    alignItems: 'center',
-    gap: 10,
-    marginBottom: 0,
-  },
-
-  breadcrumb: {
-    display: 'flex', alignItems: 'center', gap: 6,
-    fontSize: 14, fontWeight: 600, color: C.textSoft, marginBottom: 2,
-  },
+  page: { width: '100%', maxWidth: 1440, margin: '0 auto', fontFamily: "'DM Sans', 'Inter', system-ui, sans-serif" },
+  topbar: { display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 10, marginBottom: 0 },
+  breadcrumb: { display: 'flex', alignItems: 'center', gap: 6, fontSize: 14, fontWeight: 600, color: C.textSoft, marginBottom: 2 },
   breadcrumbAccent: { color: C.accent },
-  pageTitle: {
-    margin: 0,
-    fontSize: 'clamp(2.8rem,5.5vw,4.4rem)',
-    fontWeight: 800,
-    color: '#fff',
-    lineHeight: 1.05,
-    letterSpacing: '-0.5px',
-  },
   pageSub: { margin: '4px 0 14px', color: C.textSoft, fontSize: '0.9rem' },
-
-  statsBar: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(4, 1fr)',
-    gap: 12,
-    marginBottom: 20,
-  },
-  statPill: (accent) => ({
-    background: C.card,
-    border: `1px solid ${C.border}`,
-    borderLeft: `3px solid ${accent}`,
-    borderRadius: 12,
-    padding: '14px 18px',
-    display: 'flex',
-    alignItems: 'center',
-    gap: 12,
-  }),
-  statIco: (accent) => ({
-    width: 36, height: 36, borderRadius: 9,
-    background: `${accent}18`,
-    display: 'flex', alignItems: 'center', justifyContent: 'center',
-    color: accent, fontSize: 18, flexShrink: 0,
-  }),
-  statVal: { fontSize: 22, fontWeight: 800, fontFamily: "'Syne', sans-serif", background: 'linear-gradient(135deg, #e2e8f0 30%, var(--accent) 100%)', WebkitBackgroundClip: 'text', backgroundClip: 'text', color: 'transparent', lineHeight: 1 },
+  statsBar: { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 20 },
+  statPill: (accent) => ({ background: C.card, border: `1px solid ${C.border}`, borderLeft: `3px solid ${accent}`, borderRadius: 12, padding: '14px 18px', display: 'flex', alignItems: 'center', gap: 12 }),
+  statIco: (accent) => ({ width: 36, height: 36, borderRadius: 9, background: `${accent}18`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: accent, fontSize: 18, flexShrink: 0 }),
+  statVal: { fontSize: 22, fontWeight: 800, lineHeight: 1 },
   statLbl: { fontSize: 11, color: C.textSoft, marginTop: 2 },
-
-  twoCol: {
-    display: 'grid',
-    gridTemplateColumns: '1fr 340px',
-    gap: 16,
-    alignItems: 'start',
-  },
-
-  cardsGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))',
-    gap: 14,
-  },
-
-  ocupadoCard: {
-    background: C.card,
-    border: `1px solid ${C.border}`,
-    borderRadius: 14,
-    padding: '16px 18px',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 12,
-  },
-  cardTop: {
-    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-  },
-  cardSpaceBadge: {
-    background: 'rgba(9,131,200,0.18)',
-    color: C.accent,
-    fontWeight: 800,
-    fontSize: 13,
-    borderRadius: 7,
-    padding: '4px 10px',
-    letterSpacing: '0.03em',
-  },
-  cardTime: {
-    fontSize: 11, color: C.textSoft, fontWeight: 600,
-    display: 'flex', alignItems: 'center', gap: 4,
-  },
-  cardVehicle: {
-    display: 'flex', alignItems: 'center', gap: 10,
-    background: C.cardDeep,
-    borderRadius: 10,
-    padding: '10px 12px',
-  },
-  cardVehicleIco: {
-    width: 34, height: 34, borderRadius: 8,
-    background: 'rgba(9,131,200,0.12)',
-    display: 'flex', alignItems: 'center', justifyContent: 'center',
-    color: C.accent, fontSize: 20, flexShrink: 0,
-  },
-  cardPlaca: { fontSize: 14, fontWeight: 800, fontFamily: "'Syne', sans-serif", background: 'linear-gradient(135deg, #e2e8f0 30%, var(--accent) 100%)', WebkitBackgroundClip: 'text', backgroundClip: 'text', color: 'transparent', lineHeight: 1 },
+  twoCol: { display: 'grid', gridTemplateColumns: '1fr 340px', gap: 16, alignItems: 'start' },
+  cardsGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 14 },
+  ocupadoCard: { background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 12 },
+  cardTop: { display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
+  cardSpaceBadge: { background: 'rgba(9,131,200,0.18)', color: C.accent, fontWeight: 800, fontSize: 13, borderRadius: 7, padding: '4px 10px', letterSpacing: '0.03em' },
+  cardTime: { fontSize: 11, color: C.textSoft, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 },
+  cardVehicle: { display: 'flex', alignItems: 'center', gap: 10, background: C.cardDeep, borderRadius: 10, padding: '10px 12px' },
+  cardVehicleIco: { width: 34, height: 34, borderRadius: 8, background: 'rgba(9,131,200,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.accent, fontSize: 20, flexShrink: 0 },
+  cardPlaca: { fontSize: 14, fontWeight: 800, color: '#fff', lineHeight: 1 },
   cardDetalle: { fontSize: 11, color: C.textSoft, marginTop: 2 },
-  cardBottom: {
-    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-    paddingTop: 10,
-    borderTop: `1px solid ${C.border}`,
-  },
-  cardCostLabel: { fontSize: 10, color: C.textSoft, marginBottom: 2 },
-  cardCostVal: { fontSize: 16, fontWeight: 800, color: C.success },
-  cardBtn: {
-    display: 'inline-flex', alignItems: 'center', gap: 6,
-    padding: '8px 14px',
-    background: C.primary,
-    color: '#fff', border: 'none', borderRadius: 8,
-    fontWeight: 700, fontSize: 12, cursor: 'pointer',
-    fontFamily: 'inherit',
-  },
-
-  emptyCard: {
-    gridColumn: '1 / -1',
-    background: C.card,
-    border: `1px solid ${C.border}`,
-    borderRadius: 14,
-    padding: '48px 24px',
-    textAlign: 'center',
-    color: C.textSoft,
-    fontSize: 14,
-  },
-
-  skeleton: {
-    borderRadius: 10,
-    background: 'linear-gradient(90deg,#041f3a 0%,#0a3460 50%,#041f3a 100%)',
-    backgroundSize: '200% 100%',
-    animation: 'shimmer 1.25s linear infinite',
-  },
-
-  sideCard: {
-    background: C.card,
-    border: `1px solid ${C.border}`,
-    borderRadius: 14,
-    overflow: 'hidden',
-    marginBottom: 14,
-  },
-  sideCardHead: {
-    display: 'flex', alignItems: 'center', gap: 10,
-    padding: '14px 18px',
-    borderBottom: `1px solid ${C.border}`,
-  },
-  sideCardIco: {
-    width: 32, height: 32, borderRadius: 8,
-    background: 'rgba(9,131,200,0.15)',
-    display: 'flex', alignItems: 'center', justifyContent: 'center',
-    color: C.accent, fontSize: 17, flexShrink: 0,
-  },
+  cardInfo: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 },
+  infoItem: { background: C.cardDeep, borderRadius: 8, padding: '8px 10px' },
+  infoLabel: { fontSize: 10, color: C.textSoft, marginBottom: 2 },
+  infoVal: { fontSize: 12, fontWeight: 700, color: '#fff' },
+  costBadge: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: 10, borderTop: `1px solid ${C.border}` },
+  costLabel: { fontSize: 10, color: C.textSoft, marginBottom: 2 },
+  costVal: { fontSize: 16, fontWeight: 800, color: C.success },
+  emptyCard: { gridColumn: '1 / -1', background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: '48px 24px', textAlign: 'center', color: C.textSoft, fontSize: 14 },
+  skeleton: { borderRadius: 10, background: 'linear-gradient(90deg,#041f3a 0%,#0a3460 50%,#041f3a 100%)', backgroundSize: '200% 100%', animation: 'shimmer 1.25s linear infinite' },
+  sideCard: { background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, overflow: 'hidden', marginBottom: 14 },
+  sideCardHead: { display: 'flex', alignItems: 'center', gap: 10, padding: '14px 18px', borderBottom: `1px solid ${C.border}` },
+  sideCardIco: { width: 32, height: 32, borderRadius: 8, background: 'rgba(9,131,200,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.accent, fontSize: 17, flexShrink: 0 },
   sideCardTitle: { fontSize: 14, fontWeight: 700, color: '#fff', margin: 0 },
   sideCardBody: { padding: '14px 18px' },
-
-  tarifaRow: {
-    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-    padding: '10px 0',
-    borderBottom: `1px solid ${C.border}`,
-    fontSize: 13,
-  },
+  tarifaRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: `1px solid ${C.border}`, fontSize: 13 },
   tarifaLabel: { color: C.textSoft },
   tarifaVal: { color: '#fff', fontWeight: 800 },
   tarifaNote: { fontSize: 11, color: C.textSoft, marginTop: 10, lineHeight: 1.5 },
-
   floorTabs: { display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 },
-  floorTab: (active) => ({
-    padding: '5px 12px', borderRadius: 20, fontSize: 11, fontWeight: 700,
-    border: `1px solid ${active ? 'rgba(9,131,200,0.5)' : C.border}`,
-    background: active ? 'rgba(9,131,200,0.2)' : 'transparent',
-    color: active ? C.accent : C.textSoft,
-    cursor: 'pointer', fontFamily: 'inherit',
-  }),
-
-  miniMap: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fill, minmax(44px, 1fr))',
-    gap: 6,
-    marginBottom: 12,
-  },
-  miniSlot: (ocupado) => ({
-    height: 40, borderRadius: 6,
-    border: `1px solid ${ocupado ? 'rgba(248,81,73,0.4)' : 'rgba(63,185,80,0.35)'}`,
-    background: ocupado ? 'rgba(248,81,73,0.12)' : 'rgba(63,185,80,0.10)',
-    color: ocupado ? C.danger : C.success,
-    display: 'flex', alignItems: 'center', justifyContent: 'center',
-    fontSize: 9, fontWeight: 800, letterSpacing: '0.03em',
-  }),
+  floorTab: (active) => ({ padding: '5px 12px', borderRadius: 20, fontSize: 11, fontWeight: 700, border: `1px solid ${active ? 'rgba(9,131,200,0.5)' : C.border}`, background: active ? 'rgba(9,131,200,0.2)' : 'transparent', color: active ? C.accent : C.textSoft, cursor: 'pointer', fontFamily: 'inherit' }),
+  miniMap: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(44px, 1fr))', gap: 6, marginBottom: 12 },
+  miniSlot: (ocupado) => ({ height: 40, borderRadius: 6, border: `1px solid ${ocupado ? 'rgba(248,81,73,0.4)' : 'rgba(63,185,80,0.35)'}`, background: ocupado ? 'rgba(248,81,73,0.12)' : 'rgba(63,185,80,0.10)', color: ocupado ? C.danger : C.success, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 800, letterSpacing: '0.03em' }),
   miniEmpty: { fontSize: 12, color: C.textSoft, textAlign: 'center', padding: '16px 0' },
   legend: { display: 'flex', gap: 14, fontSize: 11, color: C.textSoft },
-  legendDot: (color) => ({
-    width: 9, height: 9, borderRadius: 3,
-    background: color, display: 'inline-block', marginRight: 5,
-  }),
-
-  feedbackError: {
-    borderRadius: 12, padding: '12px 16px', marginBottom: 16,
-    background: 'rgba(110,16,16,0.28)', border: '1px solid rgba(248,81,73,0.45)',
-    color: '#ffb4b1', fontWeight: 600, fontSize: 13,
-    display: 'flex', alignItems: 'center', gap: 8,
-  },
-
-  filterBar: {
-    display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap',
-  },
-  filterTab: (active) => ({
-    padding: '6px 14px', borderRadius: 20, fontSize: 12, fontWeight: 700,
-    border: `1px solid ${active ? 'rgba(9,131,200,0.5)' : C.border}`,
-    background: active ? 'rgba(9,131,200,0.2)' : C.card,
-    color: active ? C.accent : C.textSoft,
-    cursor: 'pointer', fontFamily: 'inherit',
-  }),
+  legendDot: (color) => ({ width: 9, height: 9, borderRadius: 3, background: color, display: 'inline-block', marginRight: 5 }),
+  feedbackError: { borderRadius: 12, padding: '12px 16px', marginBottom: 16, background: 'rgba(110,16,16,0.28)', border: '1px solid rgba(248,81,73,0.45)', color: '#ffb4b1', fontWeight: 600, fontSize: 13, display: 'flex', alignItems: 'center', gap: 8 },
+  filterBar: { display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' },
+  filterTab: (active) => ({ padding: '6px 14px', borderRadius: 20, fontSize: 12, fontWeight: 700, border: `1px solid ${active ? 'rgba(9,131,200,0.5)' : C.border}`, background: active ? 'rgba(9,131,200,0.2)' : C.card, color: active ? C.accent : C.textSoft, cursor: 'pointer', fontFamily: 'inherit' }),
+  activeBadge: { display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: 'rgba(63,185,80,0.12)', color: '#3fb950', border: '1px solid rgba(63,185,80,0.3)' },
+  activeDot: { width: 6, height: 6, borderRadius: '50%', background: '#3fb950', animation: 'pulse 1.5s infinite' },
 }
 
 const Icon = ({ name, size = 18 }) => (
@@ -314,19 +139,16 @@ const Icon = ({ name, size = 18 }) => (
 )
 
 export default function OccupiedSpaces() {
-  const navigate = useNavigate()
-  const cachedSpaces = getCachedApiData('/api/parking-spaces')
+  const cachedSpaces   = getCachedApiData('/api/parking-spaces')
   const cachedVehicles = getCachedApiData('/api/vehiculos')
   const cachedOccupancyData = cachedSpaces && cachedVehicles ? buildOccupancyData(cachedSpaces, cachedVehicles) : null
 
-  const [spaces, setSpaces] = useState(cachedOccupancyData?.mergedSpaces || [])
+  const [spaces, setSpaces]                   = useState(cachedOccupancyData?.mergedSpaces || [])
   const [occupancyBySpace, setOccupancyBySpace] = useState(cachedOccupancyData?.occupancy || new Map())
-  const [loading, setLoading] = useState(!cachedOccupancyData)
-  const [error, setError] = useState(null)
+  const [loading, setLoading]   = useState(!cachedOccupancyData)
+  const [error, setError]       = useState(null)
   const [nivelActivo, setNivelActivo] = useState('Todos')
   const [isEntryOpen, setIsEntryOpen] = useState(false)
-  const [isExitOpen, setIsExitOpen] = useState(false)
-  const [selectedPlate, setSelectedPlate] = useState('')
 
   const loadData = async ({ showLoader = true, forceFresh = true } = {}) => {
     if (showLoader) setLoading(true)
@@ -350,14 +172,9 @@ export default function OccupiedSpaces() {
 
   useEffect(() => {
     loadData({ showLoader: !cachedOccupancyData })
-
-    const intervalId = window.setInterval(() => {
-      loadData({ showLoader: false, forceFresh: true })
-    }, 5000)
-
+    const intervalId = window.setInterval(() => loadData({ showLoader: false, forceFresh: true }), 5000)
     const handleDataRefresh = () => loadData({ showLoader: false, forceFresh: true })
-    const handleOpenEntry = () => setIsEntryOpen(true)
-
+    const handleOpenEntry   = () => setIsEntryOpen(true)
     window.addEventListener('smartpark:data-refresh', handleDataRefresh)
     window.addEventListener('smartpark:open-entry-modal', handleOpenEntry)
     return () => {
@@ -378,7 +195,9 @@ export default function OccupiedSpaces() {
           nombre: sp.nombre || 'Sin espacio',
           tipo: sp.tipo || '',
           placa: v.placa || 'Sin placa',
-          detalle: [v.modelo, v.color].filter(Boolean).join(' - ') || v.propietario || 'Vehículo activo',
+          modelo: v.modelo || 'Vehículo',
+          color: v.color || '',
+          propietario: v.propietario || 'Sin propietario',
           since: formatSince(v.horaEntrada),
           cost: calculateCost(v.horaEntrada),
         }
@@ -403,69 +222,60 @@ export default function OccupiedSpaces() {
     [cards, nivelActivo],
   )
 
-  const totalSpaces = spaces.length
-  const ocupados = spaces.filter((s) => s.ocupado).length
-  const libres = totalSpaces - ocupados
-  const pctOcupado = totalSpaces > 0 ? Math.round((ocupados / totalSpaces) * 100) : 0
+  const totalSpaces  = spaces.length
+  const ocupados     = spaces.filter((s) => s.ocupado).length
+  const libres       = totalSpaces - ocupados
+  const pctOcupado   = totalSpaces > 0 ? Math.round((ocupados / totalSpaces) * 100) : 0
 
   return (
     <div style={s.page}>
+      <style>{`
+        @keyframes pulse   { 0%,100%{opacity:1} 50%{opacity:0.4} }
+        @keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
+      `}</style>
 
-      {/* -- Topbar: + adelante, campana atras, mismo tamano -- */}
+      {/* Topbar */}
       <div style={s.topbar}>
         <style>{`
           .sp-bell-fix .module-icon-btn {
-            width: 42px !important; height: 42px !important;
-            min-width: 42px !important; min-height: 42px !important;
-            padding: 0 !important; border-radius: 10px !important;
-            background: ${C.card} !important;
-            border: 1px solid rgba(90,202,249,0.10) !important;
-            display: inline-flex !important;
-            align-items: center !important; justify-content: center !important;
-            font-size: 20px !important;
+            width:42px!important;height:42px!important;min-width:42px!important;min-height:42px!important;
+            padding:0!important;border-radius:10px!important;background:${C.card}!important;
+            border:1px solid rgba(90,202,249,0.10)!important;
+            display:inline-flex!important;align-items:center!important;justify-content:center!important;font-size:20px!important;
           }
         `}</style>
         <button
           type="button"
           title="Asignar parqueo"
           onClick={() => setIsEntryOpen(true)}
-          style={{
-            width: 42, height: 42, borderRadius: 10,
-            background: C.card, border: `1px solid ${C.border}`,
-            color: C.textSoft, display: 'inline-flex',
-            alignItems: 'center', justifyContent: 'center',
-            cursor: 'pointer', fontFamily: 'inherit',
-          }}
+          style={{ width: 42, height: 42, borderRadius: 10, background: C.card, border: `1px solid ${C.border}`, color: C.textSoft, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontFamily: 'inherit' }}
         >
           <Icon name="add_circle" size={20} />
         </button>
-        <div className="sp-bell-fix">
-          <NotificationsBell />
-        </div>
+        <div className="sp-bell-fix"><NotificationsBell /></div>
       </div>
 
-      {/* -- Header -- */}
+      {/* Header */}
       <div style={s.breadcrumb}>
-        SmartPark
-        <span style={s.breadcrumbAccent}>/</span>
+        SmartPark <span style={s.breadcrumbAccent}>/</span>
         <span style={s.breadcrumbAccent}>Espacios Ocupados</span>
       </div>
       <h1>Espacios Ocupados</h1>
-      <p style={s.pageSub}>Gestione la liberación y el cobro de espacios activos en tiempo real.</p>
+      <p style={s.pageSub}>Visualiza los vehículos activos y el estado de los espacios en tiempo real.</p>
 
-      {/* -- Stats bar -- */}
+      {/* Stats */}
       {!loading && (
         <div style={s.statsBar}>
           {[
-            { label: 'Total espacios',  value: totalSpaces, icon: 'local_parking',  color: C.accent   },
-            { label: 'Ocupados',        value: ocupados,    icon: 'directions_car', color: C.danger   },
-            { label: 'Disponibles',     value: libres,      icon: 'check_circle',   color: C.success  },
-            { label: 'Tasa ocupación',  value: `${pctOcupado}%`, icon: 'percent',  color: C.warning  },
+            { label: 'Total espacios',  value: totalSpaces,      icon: 'local_parking',  color: C.accent  },
+            { label: 'Ocupados',        value: ocupados,         icon: 'directions_car', color: C.danger  },
+            { label: 'Disponibles',     value: libres,           icon: 'check_circle',   color: C.success },
+            { label: 'Tasa ocupación',  value: `${pctOcupado}%`, icon: 'percent',        color: C.warning },
           ].map(({ label, value, icon, color }) => (
             <div key={label} style={s.statPill(color)}>
               <div style={s.statIco(color)}><Icon name={icon} size={18} /></div>
               <div>
-                <div style={{ ...s.statVal, color: color === C.accent ? '#fff' : color }}>{value}</div>
+                <div style={{ ...s.statVal, color }}>{value}</div>
                 <div style={s.statLbl}>{label}</div>
               </div>
             </div>
@@ -473,17 +283,14 @@ export default function OccupiedSpaces() {
         </div>
       )}
 
-      {/* -- Error -- */}
       {error && (
-        <div style={s.feedbackError}>
-          <Icon name="error" size={16} />{error}
-        </div>
+        <div style={s.feedbackError}><Icon name="error" size={16} />{error}</div>
       )}
 
-      {/* -- Two-column layout -- */}
+      {/* Two-column layout */}
       <div style={s.twoCol}>
 
-        {/* -- LEFT: Cards -- */}
+        {/* LEFT: Cards */}
         <div>
           {!loading && niveles.length > 1 && (
             <div style={s.filterBar}>
@@ -497,7 +304,7 @@ export default function OccupiedSpaces() {
 
           <div style={s.cardsGrid}>
             {loading && Array.from({ length: 4 }).map((_, i) => (
-              <div key={i} style={{ ...s.skeleton, height: 160 }} />
+              <div key={i} style={{ ...s.skeleton, height: 180 }} />
             ))}
 
             {!loading && cardsFiltradas.length === 0 && (
@@ -510,45 +317,53 @@ export default function OccupiedSpaces() {
 
             {!loading && cardsFiltradas.map((item) => (
               <article key={item.id} style={s.ocupadoCard}>
+                {/* Top: space badge + active badge */}
                 <div style={s.cardTop}>
                   <span style={s.cardSpaceBadge}>{item.nombre}</span>
-                  <span style={s.cardTime}>
-                    <Icon name="schedule" size={13} />
-                    {item.since}
+                  <span style={s.activeBadge}>
+                    <span style={s.activeDot} />Activo
                   </span>
                 </div>
 
+                {/* Vehicle info */}
                 <div style={s.cardVehicle}>
                   <div style={s.cardVehicleIco}><Icon name="directions_car" size={20} /></div>
                   <div>
                     <div style={s.cardPlaca}>{item.placa}</div>
-                    <div style={s.cardDetalle}>{item.detalle}</div>
+                    <div style={s.cardDetalle}>
+                      {item.modelo}{item.color ? ` · ${item.color}` : ''}
+                    </div>
                   </div>
                 </div>
 
-                <div style={s.cardBottom}>
-                  <div>
-                    <div style={s.cardCostLabel}>Costo actual</div>
-                    <div style={s.cardCostVal}>{item.cost}</div>
+                {/* Detail grid */}
+                <div style={s.cardInfo}>
+                  <div style={s.infoItem}>
+                    <div style={s.infoLabel}>Propietario</div>
+                    <div style={s.infoVal}>{item.propietario}</div>
                   </div>
-                  <button
-                    type="button"
-                    style={s.cardBtn}
-                    onClick={() => {
-                      setSelectedPlate(item.placa)
-                      setIsExitOpen(true)
-                    }}
-                  >
-                    <Icon name="logout" size={14} />
-                    Liberar y pagar
-                  </button>
+                  <div style={s.infoItem}>
+                    <div style={s.infoLabel}>Tiempo</div>
+                    <div style={s.infoVal}>{item.since}</div>
+                  </div>
+                </div>
+
+                {/* Cost row — info only, no button */}
+                <div style={s.costBadge}>
+                  <div>
+                    <div style={s.costLabel}>Costo estimado</div>
+                    <div style={s.costVal}>{item.cost}</div>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: C.textSoft }}>
+                    <Icon name="schedule" size={13} />{item.since}
+                  </div>
                 </div>
               </article>
             ))}
           </div>
         </div>
 
-        {/* -- RIGHT: Side panel -- */}
+        {/* RIGHT: Side panel */}
         <div>
           <div style={s.sideCard}>
             <div style={s.sideCardHead}>
@@ -562,7 +377,7 @@ export default function OccupiedSpaces() {
                   <strong style={s.tarifaVal}>{t.value}</strong>
                 </div>
               ))}
-              <p style={s.tarifaNote}>* Los precios son referenciales y pueden variar según el tiempo real de ocupación.</p>
+              <p style={s.tarifaNote}>* Precios referenciales. El cobro real se gestiona desde el módulo de Cobros.</p>
             </div>
           </div>
 
@@ -581,7 +396,6 @@ export default function OccupiedSpaces() {
                   ))}
                 </div>
               )}
-
               {mapItems.length === 0 ? (
                 <div style={s.miniEmpty}>No hay espacios registrados.</div>
               ) : (
@@ -593,7 +407,6 @@ export default function OccupiedSpaces() {
                   ))}
                 </div>
               )}
-
               <div style={s.legend}>
                 <span><span style={s.legendDot('rgba(248,81,73,0.8)')} />Ocupado</span>
                 <span><span style={s.legendDot('rgba(63,185,80,0.8)')} />Disponible</span>
@@ -608,21 +421,6 @@ export default function OccupiedSpaces() {
         onClose={() => setIsEntryOpen(false)}
         onSuccess={() => loadData({ showLoader: false, forceFresh: true })}
       />
-
-      <ModalExit
-        isOpen={isExitOpen}
-        initialPlate={selectedPlate}
-        onClose={() => {
-          setIsExitOpen(false)
-          setSelectedPlate('')
-        }}
-        onSuccess={() => loadData({ showLoader: false, forceFresh: true })}
-      />
-
     </div>
   )
 }
-
-
-
-

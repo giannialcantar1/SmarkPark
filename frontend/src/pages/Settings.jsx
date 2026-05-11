@@ -283,6 +283,33 @@ const styles = {
     lineHeight: 1.4,
     marginTop: 6,
   },
+  codeValue: {
+    display: 'block',
+    padding: '12px 14px',
+    borderRadius: 14,
+    border: '1px solid rgba(56, 189, 248, 0.18)',
+    background: 'rgba(2, 6, 23, 0.5)',
+    color: '#f8fafc',
+    fontSize: 14,
+    fontWeight: 800,
+    overflowWrap: 'anywhere',
+  },
+  inlineActions: {
+    display: 'flex',
+    gap: 10,
+    flexWrap: 'wrap',
+    marginTop: 12,
+  },
+  secondaryButton: {
+    border: '1px solid rgba(148, 163, 184, 0.2)',
+    borderRadius: 14,
+    minHeight: 44,
+    padding: '0 16px',
+    background: 'rgba(15, 23, 42, 0.6)',
+    color: '#e5eefb',
+    fontWeight: 800,
+    cursor: 'pointer',
+  },
   passwordBox: {
     display: 'grid',
     gap: 10,
@@ -340,8 +367,9 @@ const InfoField = ({ icon, label, children }) => (
 
 export default function Configuracion() {
   const navigate = useNavigate()
-  const { usuario, logout } = useAuth()
+  const { user: usuario, logout } = useAuth()
   const avatarInputRef = useRef(null)
+  const copyTimeoutRef = useRef(null)
   const cachedConfig = getCachedApiData('/api/configuracion')
   const [form, setForm] = useState(() => ({
     nombre: cachedConfig?.data?.nombre || '',
@@ -353,6 +381,13 @@ export default function Configuracion() {
     email: cachedConfig?.data?.email || usuario?.email || '',
     rol: cachedConfig?.data?.rol || usuario?.rol || 'admin',
     avatarUrl: cachedConfig?.data?.avatarUrl || '',
+    garageId: cachedConfig?.data?.garage_id || '',
+    staffInvitationCode:
+      cachedConfig?.data?.staffInvitationCode ||
+      cachedConfig?.data?.staff_invitation_code ||
+      cachedConfig?.data?.invitation_code ||
+      cachedConfig?.data?.garage_id ||
+      '',
   }))
   const [passwordForm, setPasswordForm] = useState({ nueva: '', confirmar: '' })
   const [twoFactorEnabled, setTwoFactorEnabled] = useState(Boolean(cachedConfig?.data?.twoFactorEnabled))
@@ -362,6 +397,7 @@ export default function Configuracion() {
   const [saving, setSaving] = useState(false)
   const [changingPassword, setChangingPassword] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [copiedInvitationCode, setCopiedInvitationCode] = useState(false)
   const [error, setError] = useState(null)
   const [success, setSuccess] = useState(null)
 
@@ -395,6 +431,14 @@ export default function Configuracion() {
       email: payload.email ?? prev.email,
       rol: payload.rol ?? prev.rol,
       avatarUrl: payload.avatarUrl ?? payload.avatar_url ?? prev.avatarUrl,
+      garageId: payload.garage_id ?? payload.garageId ?? prev.garageId,
+      staffInvitationCode:
+        payload.staffInvitationCode ??
+        payload.staff_invitation_code ??
+        payload.invitation_code ??
+        payload.garage_id ??
+        payload.garageId ??
+        prev.staffInvitationCode,
     }))
     setTwoFactorEnabled(Boolean(payload.twoFactorEnabled ?? payload.two_factor_enabled ?? twoFactorEnabled))
     if (payload.avatarUrl || payload.avatar_url) {
@@ -418,6 +462,14 @@ export default function Configuracion() {
   useEffect(() => {
     if (!cachedConfig) cargarConfiguracion()
   }, [])
+
+  useEffect(() => (
+    () => {
+      if (copyTimeoutRef.current) {
+        window.clearTimeout(copyTimeoutRef.current)
+      }
+    }
+  ), [])
 
   const handleChange = (field) => (event) => {
     setForm((prev) => ({ ...prev, [field]: event.target.value }))
@@ -495,6 +547,27 @@ export default function Configuracion() {
       setError(err.message || 'No se pudo eliminar la cuenta.')
     } finally {
       setDeleting(false)
+    }
+  }
+
+  const handleCopyInvitationCode = async () => {
+    const invitationCode = String(form.staffInvitationCode || form.garageId || '').trim()
+    if (!invitationCode) {
+      setError('No se encontro el codigo de invitacion de este garaje.')
+      return
+    }
+
+    try {
+      await navigator.clipboard.writeText(invitationCode)
+      setCopiedInvitationCode(true)
+      if (copyTimeoutRef.current) {
+        window.clearTimeout(copyTimeoutRef.current)
+      }
+      copyTimeoutRef.current = window.setTimeout(() => {
+        setCopiedInvitationCode(false)
+      }, 1800)
+    } catch (err) {
+      setError('No se pudo copiar el codigo de invitacion.')
     }
   }
 
@@ -607,6 +680,23 @@ export default function Configuracion() {
               <InfoField icon="verified_user" label="Rol">
                 <span style={styles.valueText}>{profile.roleLabel}</span>
                 <div style={styles.helpText}>Activo</div>
+              </InfoField>
+            </div>
+          </section>
+
+          <section style={styles.card}>
+            <h2 style={styles.sectionHeader}>Acceso de personal</h2>
+            <div style={styles.fieldGrid}>
+              <InfoField icon="key" label="Codigo de invitacion para personal">
+                <code style={styles.codeValue}>{form.staffInvitationCode || form.garageId || 'No disponible'}</code>
+                <div style={styles.helpText}>
+                  Este es el `garage_id` que el personal debe pegar en `/staff-register`.
+                </div>
+                <div style={styles.inlineActions}>
+                  <button type="button" style={styles.secondaryButton} onClick={handleCopyInvitationCode}>
+                    {copiedInvitationCode ? 'Copiado' : 'Copiar'}
+                  </button>
+                </div>
               </InfoField>
             </div>
           </section>

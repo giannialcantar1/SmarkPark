@@ -23,59 +23,57 @@ class AuthController:
 
         try:
             result = self.auth_service.login(email=email, password=password, request=request)
-
-            # âœ… FIX #1: Extraer los datos del usuario
             user = result.get("user", {})
             user_id = user.get("id")
-
-            # âœ… FIX #2: Generar JWT token si no existe
             token = result.get("token") or result.get("access_token")
 
             if not token and user_id:
-                # Si el servicio no devolviÃ³ token, lo generamos aquÃ­
                 token = generate_jwt_token({
                     "sub": user_id,
                     "email": email,
                     "user_id": user_id,
                 })
 
-            # âœ… FIX #3: Retornar estructura correcta que el frontend espera
             return jsonify({
                 "success": True,
                 "message": "Login exitoso",
-                "token": token,  # â† CRÃTICO: El frontend busca "token"
+                "token": token,
                 "user": {
                     "id": user.get("id"),
                     "email": user.get("email"),
                     "name": user.get("name"),
                     "role": user.get("role"),
+                    "status": user.get("status"),
+                    "approval_status": user.get("approval_status"),
                     "garage_id": user.get("garage_id"),
                     "company_name": user.get("company_name"),
                     "company_address": user.get("company_address"),
                     "company_phone": user.get("company_phone"),
-                }
+                },
             }), 200
 
+        except PermissionError as exc:
+            return jsonify({
+                "success": False,
+                "error": str(exc),
+                "status": "pendiente_aprobacion",
+            }), 403
         except Exception as exc:
-            # â”€â”€ Log completo en consola para diagnostico â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             print("\n" + "=" * 60)
-            print(f"[AUTH] LOGIN FAILED â€” {type(exc).__name__}")
+            print(f"[AUTH] LOGIN FAILED - {type(exc).__name__}")
             print(f"[AUTH] Email: {email}")
             print(f"[AUTH] Error: {str(exc)}")
             traceback.print_exc()
             print("=" * 60 + "\n")
 
-            # â”€â”€ Clasificar el error â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             error_msg = str(exc).lower()
-
-            is_bad_credentials = any(p in error_msg for p in [
+            is_bad_credentials = any(token in error_msg for token in [
                 "invalid login credentials",
                 "invalid email or password",
                 "email not confirmed",
                 "user not found",
             ])
-
-            is_config_error = any(p in error_msg for p in [
+            is_config_error = any(token in error_msg for token in [
                 "supabase_url",
                 "supabase_key",
                 "configura",
@@ -84,7 +82,6 @@ class AuthController:
                 "timeout",
             ])
 
-            # â”€â”€ Log en Supabase â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             try:
                 log_auth_event(
                     event="login",
@@ -108,34 +105,15 @@ class AuthController:
             except Exception:
                 pass
 
-            try:
-                from utils.supabase_client import get_user_table_client
-                admin_client = get_user_table_client(use_admin=True)
-                admin_client.from_("alertas_acceso").insert({
-                    "email": email,
-                    "tipo": "login_fallido",
-                    "tipo_alerta": "login_fallido",
-                    "reason": str(exc),
-                    "route": "/api/auth/login",
-                    "estado": "pendiente",
-                }).execute()
-            except Exception:
-                pass
-
-            # â”€â”€ Respuesta al cliente â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             if is_bad_credentials:
-                return jsonify({
-                    "success": False,
-                    "error": "Correo o contraseÃ±a incorrectos.",
-                }), 401
+                return jsonify({"success": False, "error": "Correo o contrasena incorrectos."}), 401
 
             if is_config_error:
                 return jsonify({
                     "success": False,
-                    "error": "Error de configuraciÃ³n del servidor. Contacta al administrador.",
+                    "error": "Error de configuracion del servidor. Contacta al administrador.",
                 }), 500
 
-            # Cualquier otro error â€” devuelve el mensaje real para debug
             return jsonify({
                 "success": False,
                 "error": f"Error inesperado: {str(exc)}",
@@ -161,7 +139,7 @@ class AuthController:
             return jsonify({"success": False, "error": "El nombre de la empresa es requerido"}), 400
 
         if len(password) < 6:
-            return jsonify({"success": False, "error": "La contraseÃ±a debe tener al menos 6 caracteres"}), 400
+            return jsonify({"success": False, "error": "La contrasena debe tener al menos 6 caracteres"}), 400
 
         try:
             parking_spaces_count = max(1, min(int(parking_spaces_count), 300))
@@ -182,29 +160,112 @@ class AuthController:
                 request=request,
             )
             return jsonify({"success": True, "message": "Usuario creado correctamente", **result}), 201
-
         except Exception as exc:
             print("\n" + "=" * 60)
-            print(f"[AUTH] REGISTER FAILED â€” {type(exc).__name__}")
+            print(f"[AUTH] REGISTER FAILED - {type(exc).__name__}")
             print(f"[AUTH] Email: {email}")
             print(f"[AUTH] Error: {str(exc)}")
             traceback.print_exc()
             print("=" * 60 + "\n")
-
             return jsonify({
                 "success": False,
                 "error": str(exc) or "No fue posible crear el usuario",
                 "type": type(exc).__name__,
             }), 500
 
+    def staff_register(self):
+        payload = request.get_json(silent=True) or {}
+        email = str(payload.get("email") or "").strip().lower()
+        password = str(payload.get("password") or "")
+        name = str(payload.get("name") or payload.get("full_name") or "").strip()
+        role = str(payload.get("role") or "operador").strip().lower()
+        garage_code = str(payload.get("garage_code") or payload.get("codigo_garaje") or "").strip()
+
+        missing_fields = [
+            field_name
+            for field_name, value in {
+                "email": email,
+                "password": password,
+                "name": name,
+                "garage_code": garage_code,
+            }.items()
+            if not str(value or "").strip()
+        ]
+        if missing_fields:
+            return jsonify({
+                "success": False,
+                "error": f"Faltan campos requeridos: {', '.join(missing_fields)}.",
+                "code": "missing_required_fields",
+            }), 400
+
+        if len(password) < 6:
+            return jsonify({
+                "success": False,
+                "error": "La contrasena debe tener al menos 6 caracteres.",
+                "code": "weak_password",
+            }), 400
+
+        try:
+            result = self.auth_service.register_staff(
+                email=email,
+                password=password,
+                name=name,
+                role=role,
+                garage_code=garage_code,
+                request=request,
+            )
+            return jsonify({
+                "success": True,
+                "message": "Solicitud enviada. Tu cuenta quedo pendiente de aprobacion.",
+                **result,
+            }), 201
+        except ValueError as exc:
+            error_code = getattr(exc, "code", "staff_register_validation_error")
+            debug_context = getattr(exc, "debug_context", {})
+            print("\n" + "=" * 60)
+            print(f"[AUTH] STAFF REGISTER FAILED - {type(exc).__name__}")
+            print(f"[AUTH] Email: {email}")
+            print(f"[AUTH] Role: {role}")
+            print(f"[AUTH] Garage code: {garage_code}")
+            print(f"[AUTH] Error code: {error_code}")
+            print(f"[AUTH] Error: {str(exc)}")
+            if debug_context:
+                print(f"[AUTH] Debug context: {debug_context}")
+            print("=" * 60 + "\n")
+            return jsonify({
+                "success": False,
+                "error": str(exc),
+                "code": error_code,
+            }), 400
+        except Exception as exc:
+            print("\n" + "=" * 60)
+            print(f"[AUTH] STAFF REGISTER FAILED - {type(exc).__name__}")
+            print(f"[AUTH] Email: {email}")
+            print(f"[AUTH] Role: {role}")
+            print(f"[AUTH] Garage code: {garage_code}")
+            print(f"[AUTH] Error: {str(exc)}")
+            traceback.print_exc()
+            print("=" * 60 + "\n")
+            return jsonify({
+                "success": False,
+                "error": str(exc) or "No fue posible registrar al personal",
+                "type": type(exc).__name__,
+                "code": "staff_register_unexpected_error",
+            }), 500
+
     def verify(self):
-        # âœ… FIX: Devolver el usuario DIRECTAMENTE, no dentro de "user"
+        access_status = self.auth_service.user_service.get_access_status(
+            user_id=g.current_user_id,
+            email=g.current_user_email,
+        )
         return jsonify({
             "id": g.current_user_id,
             "email": g.current_user_email,
             "name": g.current_user_name,
             "role": g.current_user_role,
             "garage_id": g.current_user_garage_id,
+            "status": access_status,
+            "approval_status": access_status,
         })
 
     def logout(self):
@@ -221,9 +282,7 @@ class AuthController:
         except Exception:
             pass
 
-        return jsonify(
-            {
-                "success": True,
-                "message": "Logout registrado. El cliente debe descartar el JWT.",
-            }
-        )
+        return jsonify({
+            "success": True,
+            "message": "Logout registrado. El cliente debe descartar el JWT.",
+        })

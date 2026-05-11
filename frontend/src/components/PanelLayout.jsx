@@ -11,6 +11,7 @@ const menuLinks = {
   accessCodes:        { to: '/access-codes',      label: 'Acceso por Codigo',      icon: 'pin' },
   assignParking:      { to: '/parking/assign',    label: 'Asignar Parqueo',        icon: 'directions_car' },
   monthlyPlans:       { to: '/monthly-plans',     label: 'Planes Mensuales',       icon: 'payments' },
+  personnel:          { to: '/personnel',         label: 'Registro de Personal',   icon: 'badge' },
   morosidad:          { to: '/morosidad',         label: 'Morosidad',              icon: 'warning' },
   reservations:       { to: '/reservas',          label: 'Reservas',               icon: 'event_available' },
   visitors:           { to: '/visitors',          label: 'Visitantes',             icon: 'person_add' },
@@ -45,6 +46,7 @@ const menuOrderByRole = {
     menuLinks.vehicleHistory,
     'separator',
     menuLinks.users,
+    menuLinks.personnel,
     menuLinks.payments,
     menuLinks.monthlyPlans,
     menuLinks.morosidad,
@@ -63,6 +65,32 @@ const menuOrderByRole = {
     menuLinks.parkingHistory,
     menuLinks.settings,
   ],
+  [ROLES.OPERADOR]: [
+    menuLinks.dashboard,
+    menuLinks.gate,
+    menuLinks.accessCodes,
+    menuLinks.assignParking,
+    menuLinks.visitors,
+    menuLinks.occupiedSpaces,
+    menuLinks.parkingHistory,
+    menuLinks.settings,
+  ],
+  [ROLES.SEGURIDAD]: [
+    menuLinks.dashboard,
+    menuLinks.gate,
+    menuLinks.accessCodes,
+    menuLinks.visitors,
+    menuLinks.occupiedSpaces,
+    menuLinks.parkingHistory,
+    menuLinks.settings,
+  ],
+  [ROLES.MANTENIMIENTO]: [
+    menuLinks.dashboard,
+    menuLinks.gate,
+    menuLinks.occupiedSpaces,
+    menuLinks.parkingHistory,
+    menuLinks.settings,
+  ],
   [ROLES.USUARIO]: [
     menuLinks.vehicles,
     menuLinks.payments,
@@ -74,6 +102,9 @@ const menuOrderByRole = {
 const roleLabels = {
   [ROLES.ADMIN]:   'Administrator',
   [ROLES.PORTERO]: 'Gate Operator',
+  [ROLES.OPERADOR]: 'Operator',
+  [ROLES.SEGURIDAD]: 'Security',
+  [ROLES.MANTENIMIENTO]: 'Maintenance',
   [ROLES.USUARIO]: 'User',
 }
 

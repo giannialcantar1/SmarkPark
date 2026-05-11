@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 
 import { apiGet, apiPost, getCachedApiData } from '../lib/api'
+import { getStoredUser } from '../services/api'
 
 const styles = {
   page: { width: '100%', maxWidth: 1440, margin: '0 auto', color: '#e5eefb' },
@@ -61,6 +62,8 @@ const formatDate = (value) => {
   if (Number.isNaN(date.getTime())) return '--'
   return new Intl.DateTimeFormat('es-DO', { year: 'numeric', month: '2-digit', day: '2-digit' }).format(date)
 }
+
+const normalizeKey = (value) => String(value || '').trim().toLowerCase()
 
 export default function MonthlyPlans() {
   const cachedUsers = getCachedApiData('/api/usuarios/')
@@ -140,6 +143,67 @@ export default function MonthlyPlans() {
   }, [pendingPlans, selectedPlan, users])
 
   const selectedUser = users.find((user) => String(user.id) === String(selectedUserId))
+  const currentUser = getStoredUser()
+
+  const currentUserPendingPlans = useMemo(() => {
+    const currentUserKeys = new Set(
+      [
+        currentUser?.id,
+        currentUser?.user_id,
+        currentUser?.auth_user_id,
+      ]
+        .map(normalizeKey)
+        .filter(Boolean),
+    )
+
+    const isPendingStatus = (status) => {
+      const normalizedStatus = normalizeKey(status)
+      return normalizedStatus === 'pendiente' || normalizedStatus === 'vencido'
+    }
+
+    const filtered = pendingPlans.filter((plan) => {
+      const planUserKeys = [
+        plan?.user_id,
+        plan?.auth_user_id,
+        plan?.userId,
+      ]
+        .map(normalizeKey)
+        .filter(Boolean)
+
+      return planUserKeys.some((key) => currentUserKeys.has(key)) && isPendingStatus(plan?.status)
+    })
+
+    if (
+      selectedPlan &&
+      isPendingStatus(selectedPlan.status) &&
+      !filtered.some((plan) => normalizeKey(plan?.id) === normalizeKey(selectedPlan?.id))
+    ) {
+      const selectedPlanKeys = [
+        selectedPlan?.user_id,
+        selectedPlan?.auth_user_id,
+        selectedPlan?.userId,
+      ]
+        .map(normalizeKey)
+        .filter(Boolean)
+
+      if (selectedPlanKeys.some((key) => currentUserKeys.has(key))) {
+        filtered.push({
+          ...selectedPlan,
+          user_name:
+            selectedPlan.user_name ||
+            selectedUser?.name ||
+            selectedUser?.full_name ||
+            selectedUser?.email ||
+            currentUser?.name ||
+            currentUser?.full_name ||
+            currentUser?.email ||
+            '--',
+        })
+      }
+    }
+
+    return filtered
+  }, [currentUser, pendingPlans, selectedPlan, selectedUser])
 
   const handleSubmit = async (event) => {
     event.preventDefault()
@@ -256,7 +320,7 @@ export default function MonthlyPlans() {
           <div style={styles.tableWrap}>
             {loading ? (
               <div style={styles.empty}>Cargando mensualidades...</div>
-            ) : pendingPlans.length === 0 ? (
+            ) : currentUserPendingPlans.length === 0 ? (
               <div style={styles.empty}>No hay planes pendientes por ahora.</div>
             ) : (
               <table style={styles.table}>
@@ -270,7 +334,7 @@ export default function MonthlyPlans() {
                   </tr>
                 </thead>
                 <tbody>
-                  {pendingPlans.map((plan) => (
+                  {currentUserPendingPlans.map((plan) => (
                     <tr key={plan.id}>
                       <td style={styles.td}>{plan.user_name || '--'}</td>
                       <td style={styles.td}>{money(plan.amount)}</td>
