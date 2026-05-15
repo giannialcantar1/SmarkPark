@@ -54,6 +54,7 @@ create table if not exists public.parking_sessions (
 -- Tabla payments
 create table if not exists public.payments (
   id uuid primary key default gen_random_uuid(),
+  garage_id uuid not null,
   session_id uuid references public.parking_sessions(id),
   monto decimal,
   metodo varchar,

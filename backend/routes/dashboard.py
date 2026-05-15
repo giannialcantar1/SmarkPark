@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from datetime import timedelta
 
 from flask import Blueprint, g, jsonify
 
@@ -74,21 +75,16 @@ def _payments() -> list[dict]:
         session_ids = {str(row.get("id")) for row in _sessions() if row.get("id")}
         rows = select_rows(
             "payments",
-            filters=[{"column": "garage_id", "value": g.current_user_garage_id, "optional": True}],
+            filters=[{"column": "garage_id", "value": g.current_user_garage_id, "optional": False}],
             order_candidates=["fecha", "paid_at", "created_at"],
             desc=True,
         )
         payments: list[dict] = []
         for row in rows:
             session_id = str(row.get("session_id") or row.get("parking_session_id") or "")
-            garage_id = normalize_text(row.get("garage_id"))
-            if garage_id and garage_id != normalize_text(g.current_user_garage_id):
+            if session_id and session_ids and session_id not in session_ids:
                 continue
-            if session_id and session_id in session_ids:
-                payments.append(row)
-                continue
-            if garage_id == normalize_text(g.current_user_garage_id):
-                payments.append(row)
+            payments.append(row)
         g._cached_payments = payments
     return g._cached_payments
 
@@ -131,6 +127,11 @@ def _session_payment_date(row: dict):
     return parse_datetime(row.get("paid_at") or row.get("salida") or row.get("exit_time") or row.get("hora_fin"))
 
 
+def _week_start(base_date):
+    date = base_date.replace(hour=0, minute=0, second=0, microsecond=0)
+    return date - timedelta(days=date.weekday())
+
+
 def _is_paid_or_completed_session(row: dict) -> bool:
     if row.get("paid") is True or normalize_text(row.get("payment_status")) == "paid":
         return True
@@ -142,8 +143,6 @@ def _is_paid_or_completed_session(row: dict) -> bool:
 @auth_required
 def dashboard_stats():
     try:
-        print(f"[DEBUG] g.current_user_garage_id = {g.current_user_garage_id}")
-        print(f"[DEBUG] user token metadata: {g.current_user}")
         spaces = _spaces()
         vehicles = _vehicles()
         sessions = _sessions()
@@ -225,6 +224,8 @@ def dashboard_stats():
 
         monthly_stats = monthly_plan_service.stats(garage_id=g.current_user_garage_id)
 
+        weekly_income = _weekly_income(payments, sessions, paid_session_ids, today)
+
         return jsonify(
             {
                 "totalSpaces": total_spaces,
@@ -235,7 +236,7 @@ def dashboard_stats():
                 "occupancyPercentage": round((occupied_spaces / total_spaces) * 100) if total_spaces else 0,
                 "floorStats": floor_stats,
                 "recentActivity": recent_activity,
-                "weeklyIncome": _weekly_income(payments, sessions, paid_session_ids, today),
+                "weeklyIncome": weekly_income,
                 "monthlyPlansActive": monthly_stats.get("active_count", 0),
                 "monthlyPlansPending": monthly_stats.get("pending_count", 0),
                 "monthlyPlansOverdue": monthly_stats.get("overdue_count", 0),
@@ -252,10 +253,12 @@ def dashboard_stats():
 def _weekly_income(payments, sessions, paid_session_ids, today):
     day_names = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
     income_by_day = defaultdict(float)
+    week_start = _week_start(today)
+    week_end = week_start + timedelta(days=7)
     
     for payment in payments:
         paid_at = _payment_date(payment)
-        if paid_at and paid_at.isocalendar()[1] == today.isocalendar()[1]:  # Same week
+        if paid_at and week_start <= paid_at < week_end:
             day_name = day_names[paid_at.weekday()]
             income_by_day[day_name] += _money_value(payment, "monto", "amount")
 
@@ -264,7 +267,7 @@ def _weekly_income(payments, sessions, paid_session_ids, today):
         if session_id in paid_session_ids or not _is_paid_or_completed_session(session):
             continue
         paid_at = _session_payment_date(session)
-        if paid_at and paid_at.isocalendar()[1] == today.isocalendar()[1]:
+        if paid_at and week_start <= paid_at < week_end:
             amount = _money_value(session, "monto_total", "amount", "costo", "total_amount")
             if not amount:
                 continue

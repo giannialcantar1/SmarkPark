@@ -13,6 +13,7 @@ import { isPendingApproval } from '../lib/roles'
 import {
   apiRequest,
   clearStoredAuth,
+  clearStoredGarageId,
   getStoredToken,
   getStoredUser,
   normalizeUser,
@@ -56,6 +57,7 @@ export function AuthProvider({ children }) {
     const fallbackUser = buildSessionUser(nextSession)
     setSession(nextSession)
     setUser(fallbackUser)
+    clearStoredGarageId()
     setStoredAuth(nextSession.access_token, fallbackUser)
 
     try {

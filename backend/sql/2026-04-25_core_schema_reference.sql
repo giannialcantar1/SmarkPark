@@ -44,6 +44,7 @@ create table if not exists public.parking_sessions (
 
 create table if not exists public.payments (
   id uuid primary key default gen_random_uuid(),
+  garage_id uuid not null,
   session_id uuid not null,
   monto numeric(12,2) not null,
   metodo text not null,

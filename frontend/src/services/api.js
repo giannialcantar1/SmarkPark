@@ -72,18 +72,26 @@ export function getStoredUser() {
   return normalizeUser(safeJsonParse(window.localStorage.getItem(USER_STORAGE_KEY), null))
 }
 
+export function clearStoredGarageId() {
+  if (!isBrowser()) return
+  window.localStorage.removeItem('smartpark_garage_id')
+}
+
 function getStoredGarageId() {
   if (!isBrowser()) return ''
 
   const directGarageId = window.localStorage.getItem('smartpark_garage_id') || ''
-  if (directGarageId) return directGarageId
-
   const storedUser = getStoredUser()
   const fallbackGarageId = String(storedUser?.garage_id || storedUser?.garageId || '').trim()
+
   if (fallbackGarageId) {
-    window.localStorage.setItem('smartpark_garage_id', fallbackGarageId)
+    if (directGarageId !== fallbackGarageId) {
+      window.localStorage.setItem('smartpark_garage_id', fallbackGarageId)
+    }
     return fallbackGarageId
   }
+
+  if (directGarageId) return directGarageId
 
   return ''
 }
@@ -97,6 +105,7 @@ export function setStoredAuth(token, user) {
   if (normalizedUser) {
     window.localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(normalizedUser))
   }
+  clearStoredGarageId()
   if (normalizedUser?.garage_id) {
     window.localStorage.setItem('smartpark_garage_id', normalizedUser.garage_id)
   }
@@ -107,7 +116,7 @@ export function clearStoredAuth() {
   if (!isBrowser()) return
   window.localStorage.removeItem(TOKEN_STORAGE_KEY)
   window.localStorage.removeItem(USER_STORAGE_KEY)
-  window.localStorage.removeItem('smartpark_garage_id')
+  clearStoredGarageId()
   dispatchBrowserEvent('smartpark:auth-changed', { token: '', user: null })
 }
 
