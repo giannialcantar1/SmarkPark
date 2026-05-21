@@ -1,5 +1,3 @@
-import { supabase } from '../lib/supabase'
-
 const API_BASE_URL = (import.meta.env.VITE_API_URL?.trim() || 'http://127.0.0.1:5000')
   .replace('http://localhost:5000', 'http://127.0.0.1:5000')
   .replace(/\/$/, '')
@@ -7,6 +5,7 @@ const API_BASE_URL = (import.meta.env.VITE_API_URL?.trim() || 'http://127.0.0.1:
 export const TOKEN_STORAGE_KEY = 'smartpark_token'
 export const USER_STORAGE_KEY = 'smartpark_current_user'
 export const SESSION_TOKEN = '__session__'
+let supabaseClientPromise = null
 
 export class ApiError extends Error {
   constructor(message, { status = 500, payload = null } = {}) {
@@ -27,6 +26,14 @@ async function bestEffort(callable, fallback = null) {
 
 function isBrowser() {
   return typeof window !== 'undefined'
+}
+
+async function getSupabaseClient() {
+  if (!supabaseClientPromise) {
+    supabaseClientPromise = import('../lib/supabase').then((module) => module.supabase)
+  }
+
+  return supabaseClientPromise
 }
 
 function dispatchBrowserEvent(name, detail) {
@@ -123,6 +130,7 @@ export function clearStoredAuth() {
 async function getFreshSessionToken() {
   if (!isBrowser()) return ''
 
+  const supabase = await getSupabaseClient()
   const { data } = await supabase.auth.getSession()
   let session = data?.session ?? null
   const expiresAt = Number(session?.expires_at || 0)
@@ -168,6 +176,7 @@ function isExpiredTokenResponse(response, payload) {
 
 export async function refreshStoredTokenAfterExpiredResponse() {
   if (!isBrowser()) return ''
+  const supabase = await getSupabaseClient()
   const { data } = await supabase.auth.refreshSession()
   const session = data?.session ?? null
 

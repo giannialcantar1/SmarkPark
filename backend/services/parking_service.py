@@ -13,6 +13,16 @@ class ParkingService:
         self.session_repository = SessionRepository()
         self.vehicle_repository = VehicleRepository()
 
+    def _space_floor_label(self, index: int) -> str:
+        floor_label = ""
+        current = max(0, int(index))
+        while True:
+            current, remainder = divmod(current, 26)
+            floor_label = chr(ord("A") + remainder) + floor_label
+            if current == 0:
+                return floor_label
+            current -= 1
+
     def _vehicles(self, *, garage_id: str) -> list[dict]:
         return self.vehicle_repository.get_by_garage(garage_id)
 
@@ -23,20 +33,13 @@ class ParkingService:
         )
         if spaces or not garage_id:
             return spaces
-        if normalize_text(garage_id) != normalize_text(Config.DEFAULT_GARAGE_ID):
-            fallback_spaces = self.space_repository.get_all(
-                filters=[{"column": "garage_id", "value": Config.DEFAULT_GARAGE_ID, "optional": False}],
-                order_candidates=["piso", "numero", "created_at"],
-            )
-            if fallback_spaces:
-                return fallback_spaces
         return self._create_default_spaces(garage_id=garage_id, count=20)
 
     def _create_default_spaces(self, *, garage_id: str, count: int) -> list[dict]:
         rows = []
-        for index in range(max(1, count)):
+        for index in range(max(0, count)):
             floor_index = index // 20
-            floor = chr(ord("A") + min(floor_index, 25))
+            floor = self._space_floor_label(floor_index)
             number = f"{floor}{(index % 20) + 1}"
             space = self.space_repository.create(
                 {
@@ -177,8 +180,9 @@ class ParkingService:
         current_space = next((row for row in self._spaces(garage_id=garage_id) if str(row.get("id")) == str(space_id)), None)
         if not current_space:
             return None
-        updated = self.space_repository.update(
+        updated = self.space_repository.update_in_garage(
             space_id,
+            garage_id,
             {
                 "ocupado": status == "occupied",
                 "estado": "ocupado" if status == "occupied" else "disponible",
@@ -286,8 +290,9 @@ class ParkingService:
                 "is_active": True,
             }
         )
-        self.space_repository.update(
+        self.space_repository.update_in_garage(
             str(space.get("id")),
+            garage_id,
             {
                 "ocupado": True,
                 "estado": "ocupado",
@@ -367,8 +372,9 @@ class ParkingService:
         )
 
         if session.get("space_id"):
-            self.space_repository.update(
+            self.space_repository.update_in_garage(
                 str(session.get("space_id")),
+                garage_id,
                 {
                     "ocupado": False,
                     "estado": "disponible",

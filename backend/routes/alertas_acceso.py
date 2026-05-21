@@ -14,7 +14,8 @@ alertas_acceso_bp = Blueprint("alertas_acceso", __name__, url_prefix="/api/alert
 def get_alertas_acceso():
     try:
         rows = select_rows(
-            "alertas_acceso",
+            "access_alerts",
+            filters=[{"column": "garage_id", "value": g.current_user_garage_id, "optional": True}],
             order_candidates=["created_at", "fecha"],
             desc=True,
             limit=50,

@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from 'react'
+import { Suspense, lazy, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
-import ModalEntry from '../components/ModalEntry'
-import ModalExit from '../components/ModalExit'
 import { apiGet, getCachedApiData } from '../lib/api'
 import { DEFAULT_FLOORS, buildFloorIndex, getSpaceFloor } from '../lib/floors'
+
+const ModalEntry = lazy(() => import('../components/ModalEntry'))
+const ModalExit = lazy(() => import('../components/ModalExit'))
 
 /* --- helpers ----------------------------------------------- */
 function toDate(value) {
@@ -860,21 +861,23 @@ export default function GatePanel() {
         </div>
       )}
 
-      <ModalEntry
-        isOpen={isEntryOpen}
-        onClose={() => setIsEntryOpen(false)}
-        onSuccess={() => loadData({ showLoader: false, forceFresh: true })}
-      />
+      <Suspense fallback={null}>
+        <ModalEntry
+          isOpen={isEntryOpen}
+          onClose={() => setIsEntryOpen(false)}
+          onSuccess={() => loadData({ showLoader: false, forceFresh: true })}
+        />
 
-      <ModalExit
-        isOpen={isExitOpen}
-        initialPlate={selectedPlate}
-        onClose={() => {
-          setIsExitOpen(false)
-          setSelectedPlate('')
-        }}
-        onSuccess={() => loadData({ showLoader: false, forceFresh: true })}
-      />
+        <ModalExit
+          isOpen={isExitOpen}
+          initialPlate={selectedPlate}
+          onClose={() => {
+            setIsExitOpen(false)
+            setSelectedPlate('')
+          }}
+          onSuccess={() => loadData({ showLoader: false, forceFresh: true })}
+        />
+      </Suspense>
     </div>
   )
 }

@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import './landing.css'
 
@@ -48,6 +49,31 @@ const features = [
 
 export default function Landing() {
   const navigate = useNavigate()
+  const [shouldLoadVideo, setShouldLoadVideo] = useState(false)
+
+  useEffect(() => {
+    let timeoutId = null
+    let idleId = null
+
+    const scheduleVideoLoad = () => {
+      setShouldLoadVideo(true)
+    }
+
+    if (typeof window.requestIdleCallback === 'function') {
+      idleId = window.requestIdleCallback(scheduleVideoLoad, { timeout: 1200 })
+    } else {
+      timeoutId = window.setTimeout(scheduleVideoLoad, 700)
+    }
+
+    return () => {
+      if (typeof window.cancelIdleCallback === 'function' && idleId !== null) {
+        window.cancelIdleCallback(idleId)
+      }
+      if (timeoutId !== null) {
+        window.clearTimeout(timeoutId)
+      }
+    }
+  }, [])
 
   const scrollTo = (id) => {
     const element = document.getElementById(id)
@@ -61,7 +87,7 @@ export default function Landing() {
       <nav className="landing-nav">
         <div className="landing-logo">
           <div className="logo-mark">
-            <img className="logo-mark__image" src="/images/logo-smartpark.png" alt="Logo de SmartPark" />
+            <img className="logo-mark__image" src="/favicon-smartpark-round.png" alt="Logo de SmartPark" />
           </div>
           <div>
             <p className="logo-title">SmartPark</p>
@@ -90,9 +116,13 @@ export default function Landing() {
       </nav>
 
       <header className="landing-hero">
-        <video className="hero-video" autoPlay muted loop playsInline poster="/images/hero-fallback.webp" preload="metadata">
-          <source src="/videos/background-loop.mp4" type="video/mp4" />
-        </video>
+        {shouldLoadVideo ? (
+          <video className="hero-video" autoPlay muted loop playsInline preload="none">
+            <source src="/videos/background-loop.mp4" type="video/mp4" />
+          </video>
+        ) : (
+          <div className="hero-fallback" aria-hidden="true" />
+        )}
         <div className="hero-overlay" />
         <div className="hero-glow glow-top" />
         <div className="hero-glow glow-bottom" />

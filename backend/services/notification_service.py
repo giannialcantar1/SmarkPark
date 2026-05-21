@@ -29,7 +29,7 @@ class NotificationService:
         leida: bool = False,
     ) -> dict:
         return insert_row(
-            "notificaciones",
+            "notifications",
             {
                 "usuario_id": usuario_id,
                 "mensaje": mensaje,

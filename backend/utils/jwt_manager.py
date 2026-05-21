@@ -45,6 +45,29 @@ class JWTManager:
             raise ValueError(f"Se esperaba un token de tipo {expected_type}")
         return claims
 
+    @staticmethod
+    def _looks_like_auth_backend_error(exc: Exception) -> bool:
+        message = str(exc or "").lower()
+        return any(
+            token in message
+            for token in (
+                "timeout",
+                "timed out",
+                "connection",
+                "connect",
+                "ssl",
+                "server disconnected",
+                "temporarily unavailable",
+                "name resolution",
+                "dns",
+                "configura supabase",
+                "supabase_url",
+                "supabase_key",
+                "service role",
+                "network",
+            )
+        )
+
     def verify_token(self, token: str):
         if not token:
             raise ValueError("JWT requerido")
@@ -56,6 +79,10 @@ class JWTManager:
                 raise ValueError("Token invalido o expirado")
             return user
         except Exception as e:
+            if isinstance(e, ValueError):
+                raise
+            if self._looks_like_auth_backend_error(e):
+                raise RuntimeError(f"No fue posible validar la sesion con Supabase: {e}")
             raise ValueError(f"Token invalido: {e}")
 
     def refresh_token(self, refresh_token: str) -> dict[str, Any]:

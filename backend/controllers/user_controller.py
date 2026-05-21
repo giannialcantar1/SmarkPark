@@ -3,6 +3,7 @@ from __future__ import annotations
 from flask import g, jsonify, request
 
 from services import AuthService, UserService
+from utils.pagination import get_pagination_params, paginate_items
 from utils.supabase_client import normalize_text
 
 
@@ -13,7 +14,11 @@ class UserController:
 
     def list(self):
         users = self.user_service.list_users(garage_id=g.current_user_garage_id)
-        return jsonify({"success": True, "data": users})
+        pagination = get_pagination_params()
+        if not pagination["enabled"]:
+            return jsonify({"success": True, "data": users})
+        page_rows, meta = paginate_items(users, page=pagination["page"], page_size=pagination["page_size"])
+        return jsonify({"success": True, "data": page_rows, "meta": meta})
 
     def create(self):
         payload = request.get_json(silent=True) or {}

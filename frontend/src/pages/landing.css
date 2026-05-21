@@ -151,6 +151,7 @@
 }
 
 .hero-video,
+.hero-fallback,
 .hero-overlay,
 .hero-glow {
   position: absolute;
@@ -161,6 +162,13 @@
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+
+.hero-fallback {
+  background:
+    radial-gradient(circle at 24% 30%, rgba(94, 193, 255, 0.24), transparent 22%),
+    radial-gradient(circle at 72% 64%, rgba(0, 180, 216, 0.18), transparent 24%),
+    linear-gradient(135deg, #07101e 0%, #0a1a30 48%, #112947 100%);
 }
 
 .hero-overlay {

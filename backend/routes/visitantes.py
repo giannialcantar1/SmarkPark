@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from flask import Blueprint, g, jsonify, request
 
-from config import Config
 from utils.decorators import auth_required
+from utils.pagination import get_pagination_params, paginate_items
 from utils.supabase_client import insert_row, normalize_parking_space, normalize_text, select_rows, update_rows, utcnow_iso
 
 
@@ -49,12 +49,6 @@ def _garage_spaces_index() -> dict[str, dict]:
         filters=[{"column": "garage_id", "value": g.current_user_garage_id, "optional": False}],
         order_candidates=["numero", "piso", "created_at"],
     )
-    if not rows and normalize_text(g.current_user_garage_id) != normalize_text(Config.DEFAULT_GARAGE_ID):
-        rows = select_rows(
-            "parking_spaces",
-            filters=[{"column": "garage_id", "value": Config.DEFAULT_GARAGE_ID, "optional": False}],
-            order_candidates=["numero", "piso", "created_at"],
-        )
     spaces = [normalize_parking_space(row) for row in rows]
     return {str(space.get("id") or ""): space for space in spaces}
 
@@ -65,7 +59,10 @@ def _set_space_status(space_id: str | None, status: str) -> None:
     update_rows(
         "parking_spaces",
         payload={"estado": status, "status": status},
-        filters=[{"column": "id", "value": space_id, "optional": False}],
+        filters=[
+            {"column": "id", "value": space_id, "optional": False},
+            {"column": "garage_id", "value": g.current_user_garage_id, "optional": False},
+        ],
     )
 
 
@@ -93,8 +90,11 @@ def register_visitor_entry():
     if not espacio_id:
         return jsonify({"success": False, "error": "espacio_id es requerido"}), 400
 
+    if str(espacio_id) not in _garage_spaces_index():
+        return jsonify({"success": False, "error": "El espacio no pertenece a este garage"}), 400
+
     active = select_rows(
-        "visitantes",
+        "visitors",
         filters=[
             {"column": "garage_id", "value": g.current_user_garage_id, "optional": False},
             {"column": "placa", "value": placa, "optional": False},
@@ -108,7 +108,7 @@ def register_visitor_entry():
         return jsonify({"success": False, "error": "Ya existe un visitante activo con esa placa"}), 400
 
     created = insert_row(
-        "visitantes",
+        "visitors",
         {
             "garage_id": g.current_user_garage_id,
             "nombre": nombre,
@@ -125,7 +125,7 @@ def register_visitor_entry():
         },
     )
     if not created.get("id"):
-        return jsonify({"success": False, "error": "La tabla visitantes no esta disponible todavia en Supabase."}), 500
+        return jsonify({"success": False, "error": "La tabla visitors no esta disponible todavia en Supabase."}), 500
 
     _set_space_status(str(espacio_id), "ocupado")
 
@@ -143,7 +143,7 @@ def register_visitor_exit():
         return jsonify({"success": False, "error": "La placa es requerida"}), 400
 
     active_rows = select_rows(
-        "visitantes",
+        "visitors",
         filters=[
             {"column": "garage_id", "value": g.current_user_garage_id, "optional": False},
             {"column": "placa", "value": placa, "optional": False},
@@ -159,7 +159,7 @@ def register_visitor_exit():
 
     current = active_rows[0]
     updated_rows = update_rows(
-        "visitantes",
+        "visitors",
         payload={
             "salida": utcnow_iso(),
             "estado": "fuera",
@@ -179,7 +179,7 @@ def register_visitor_exit():
 @auth_required
 def list_active_visitors():
     rows = select_rows(
-        "visitantes",
+        "visitors",
         filters=[
             {"column": "garage_id", "value": g.current_user_garage_id, "optional": False},
             {"column": "estado", "value": "dentro", "optional": False},
@@ -189,14 +189,18 @@ def list_active_visitors():
     )
     spaces_by_id = _garage_spaces_index()
     visitors = [_normalize_visitor(row, spaces_by_id) for row in rows]
-    return jsonify({"success": True, "data": visitors}), 200
+    pagination = get_pagination_params()
+    if not pagination["enabled"]:
+        return jsonify({"success": True, "data": visitors}), 200
+    page_rows, meta = paginate_items(visitors, page=pagination["page"], page_size=pagination["page_size"])
+    return jsonify({"success": True, "data": page_rows, "meta": meta}), 200
 
 
 @visitantes_bp.get("/historial")
 @auth_required
 def list_visitor_history():
     rows = select_rows(
-        "visitantes",
+        "visitors",
         filters=[{"column": "garage_id", "value": g.current_user_garage_id, "optional": False}],
         order_candidates=["entrada", "created_at"],
         desc=True,
@@ -204,4 +208,8 @@ def list_visitor_history():
     )
     spaces_by_id = _garage_spaces_index()
     visitors = [_normalize_visitor(row, spaces_by_id) for row in rows]
-    return jsonify({"success": True, "data": visitors}), 200
+    pagination = get_pagination_params()
+    if not pagination["enabled"]:
+        return jsonify({"success": True, "data": visitors}), 200
+    page_rows, meta = paginate_items(visitors, page=pagination["page"], page_size=pagination["page_size"])
+    return jsonify({"success": True, "data": page_rows, "meta": meta}), 200

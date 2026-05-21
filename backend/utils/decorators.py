@@ -46,6 +46,17 @@ def auth_required(view_func):
 
         try:
             user = verify_jwt_token(token)
+        except RuntimeError as exc:
+            log_auth_event(
+                event="auth_backend_unavailable",
+                success=False,
+                email=None,
+                garage_id=None,
+                ip_address=get_client_ip(request),
+                user_agent=request.headers.get("User-Agent"),
+                details={"route": request.path, "error": str(exc)},
+            )
+            return jsonify({"success": False, "error": "Servicio de autenticacion no disponible"}), 503
         except Exception as exc:
             create_access_alert(
                 email=None,

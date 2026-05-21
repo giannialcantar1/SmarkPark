@@ -159,6 +159,16 @@ class AuthService:
         suffix = re.sub(r"[^A-Fa-f0-9]", "", garage_id)[:8].upper()
         return f"{prefix}-{suffix}"
 
+    def _space_floor_label(self, index: int) -> str:
+        floor_label = ""
+        current = max(0, int(index))
+        while True:
+            current, remainder = divmod(current, 26)
+            floor_label = chr(ord("A") + remainder) + floor_label
+            if current == 0:
+                return floor_label
+            current -= 1
+
     def _create_company_record(
         self,
         *,
@@ -189,7 +199,7 @@ class AuthService:
             "created_at": now,
             "updated_at": now,
         }
-        company = insert_row("garajes", company_payload)
+        company = insert_row("garages", company_payload)
         insert_row(
             "settings",
             {
@@ -207,18 +217,20 @@ class AuthService:
         return company
 
     def _seed_parking_spaces(self, *, garage_id: str, count: int) -> None:
-        existing = select_rows(
+        existing_spaces = select_rows(
             "parking_spaces",
             filters=[{"column": "garage_id", "value": garage_id, "optional": False}],
-            limit=1,
         )
-        if existing:
+        if count <= 0:
+            return
+        existing_count = len(existing_spaces)
+        if existing_count >= count:
             return
 
         rows = []
-        for index in range(max(1, count)):
+        for index in range(existing_count, count):
             floor_index = index // 20
-            floor = chr(ord("A") + min(floor_index, 25))
+            floor = self._space_floor_label(floor_index)
             number = f"{floor}{(index % 20) + 1}"
             rows.append(
                 {
@@ -247,7 +259,7 @@ class AuthService:
             )
 
         garages = select_rows(
-            "garajes",
+            "garages",
             order_candidates=["created_at", "updated_at"],
             desc=True,
             limit=500,

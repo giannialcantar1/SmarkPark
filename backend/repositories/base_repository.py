@@ -66,6 +66,7 @@ class BaseRepository:
         order_candidates: list[str] | None = None,
         desc: bool = False,
         limit: int | None = None,
+        offset: int = 0,
     ) -> list[dict[str, Any]]:
         rows = select_rows(
             self.table_name,
@@ -73,6 +74,7 @@ class BaseRepository:
             order_candidates=order_candidates,
             desc=desc,
             limit=limit,
+            offset=offset,
         )
         return self._normalize_many(rows)
 

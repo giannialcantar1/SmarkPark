@@ -5,6 +5,7 @@ import { useAuth } from '../contexts/AuthContext'
 
 export default function useNotifications() {
   const { user } = useAuth()
+  const currentGarageId = String(user?.garage_id || user?.garageId || user?.user_metadata?.garage_id || '').trim()
   const cachedPayload = getCachedApiData('/api/notificaciones')
   const [notifications, setNotifications] = useState(
     Array.isArray(cachedPayload?.data) ? cachedPayload.data : [],
@@ -18,7 +19,7 @@ export default function useNotifications() {
 
   const refreshNotifications = useCallback(
     async ({ showLoader = false, forceFresh = false } = {}) => {
-      if (!user) {
+      if (!user || !currentGarageId) {
         setNotifications([])
         setLoading(false)
         return []
@@ -40,7 +41,7 @@ export default function useNotifications() {
         setLoading(false)
       }
     },
-    [user],
+    [currentGarageId, user],
   )
 
   const markNotificationAsRead = useCallback(async (id) => {
@@ -79,8 +80,13 @@ export default function useNotifications() {
   }, [notifications, refreshNotifications])
 
   useEffect(() => {
+    if (!currentGarageId) {
+      setNotifications([])
+      setLoading(false)
+      return
+    }
     refreshNotifications({ showLoader: !cachedPayload })
-  }, [cachedPayload, refreshNotifications])
+  }, [cachedPayload, currentGarageId, refreshNotifications])
 
   return {
     loading,

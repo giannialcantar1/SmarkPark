@@ -12,19 +12,22 @@ from .notificaciones import notificaciones_bp
 from .parking_sessions import parking_sessions_bp
 from .parking_spaces import parking_spaces_bp
 from .payments import payments_bp
+from .qr_access import qr_access_bp
 from .reservas import reservas_bp
 from .reports import reports_bp
 from .settings import settings_bp
 from .users import users_bp
-from .vehicles import vehicles_bp
+from .vehicles import legacy_vehicles_bp, vehicles_bp
 from .visitantes import visitantes_bp
 
 
 def register_blueprints(app: Flask) -> None:
     app.register_blueprint(auth_bp)
     app.register_blueprint(access_codes_bp)
+    app.register_blueprint(qr_access_bp)
     app.register_blueprint(parking_spaces_bp)
     app.register_blueprint(vehicles_bp)
+    app.register_blueprint(legacy_vehicles_bp)
     app.register_blueprint(parking_sessions_bp)
     app.register_blueprint(payments_bp)
     app.register_blueprint(dashboard_bp)

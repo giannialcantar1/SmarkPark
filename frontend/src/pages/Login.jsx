@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 
-import { useAuth } from '../hooks/useAuth'
+import { getStoredUser, login as loginRequest, setStoredAuth } from '../services/api'
 import { getDefaultRouteForRole } from '../lib/roles'
 import './auth.css'
 
@@ -12,7 +12,6 @@ const PASSWORD_MAX = 8
 export default function Login() {
   const navigate = useNavigate()
   const location = useLocation()
-  const { login } = useAuth()
   const [form, setForm] = useState({ email: '', password: '' })
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState(null)
@@ -24,8 +23,10 @@ export default function Login() {
       : null
   })
   const [submitting, setSubmitting] = useState(false)
+  const [decorReady, setDecorReady] = useState(false)
   const panelRef = useRef(null)
   const redirectTo = location.state?.from?.pathname
+  const forceAccess = new URLSearchParams(location.search).get('force') === '1'
   const handleMouseMove = (event) => {
     if (!panelRef.current) return
     const rect = event.currentTarget.getBoundingClientRect()
@@ -58,7 +59,23 @@ export default function Login() {
     }
 
     try {
-      const result = await login(form.email, form.password)
+      const result = await loginRequest(form.email, form.password)
+      const token = String(result?.token || '').trim()
+      const refreshToken = String(result?.refresh_token || '').trim()
+      const nextUser = result?.user || null
+
+      if (token && nextUser) {
+        setStoredAuth(token, nextUser)
+      }
+
+      if (token && refreshToken) {
+        const { supabase } = await import('../lib/supabase')
+        await supabase.auth.setSession({
+          access_token: token,
+          refresh_token: refreshToken,
+        })
+      }
+
       const nextRoute = redirectTo || getDefaultRouteForRole(result?.user?.role)
       navigate(nextRoute, { replace: true })
     } catch (err) {
@@ -76,15 +93,49 @@ export default function Login() {
   }, [location.search])
 
   useEffect(() => {
+    if (forceAccess) return
+
+    const storedUser = getStoredUser()
+    if (!storedUser) return
+
+    navigate(
+      getDefaultRouteForRole(storedUser?.role, storedUser?.status || storedUser?.approval_status),
+      { replace: true },
+    )
+  }, [forceAccess, navigate])
+
+  useEffect(() => {
     document.body.classList.add('auth-active')
     return () => {
       document.body.classList.remove('auth-active')
     }
   }, [])
 
+  useEffect(() => {
+    let timeoutId = null
+    let idleId = null
+
+    const enableDecor = () => setDecorReady(true)
+
+    if (typeof window.requestIdleCallback === 'function') {
+      idleId = window.requestIdleCallback(enableDecor, { timeout: 900 })
+    } else {
+      timeoutId = window.setTimeout(enableDecor, 350)
+    }
+
+    return () => {
+      if (idleId !== null && typeof window.cancelIdleCallback === 'function') {
+        window.cancelIdleCallback(idleId)
+      }
+      if (timeoutId !== null) {
+        window.clearTimeout(timeoutId)
+      }
+    }
+  }, [])
+
 
   return (
-    <div className="auth-page">
+    <div className={`auth-page${decorReady ? ' auth-page--decor' : ''}`}>
       <section className="auth-screen">
         <div className="auth-panel auth-fade-in" ref={panelRef} onMouseMove={handleMouseMove}>
           <h1>Iniciar sesion</h1>

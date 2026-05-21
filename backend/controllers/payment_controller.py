@@ -3,6 +3,7 @@ from __future__ import annotations
 from flask import g, jsonify, request
 
 from services import PaymentService
+from utils.pagination import get_pagination_params, paginate_items
 
 
 class PaymentController:
@@ -30,7 +31,11 @@ class PaymentController:
 
     def list(self):
         rows = self.payment_service.list_payments(garage_id=g.current_user_garage_id)
-        return jsonify({"success": True, "data": rows})
+        pagination = get_pagination_params()
+        if not pagination["enabled"]:
+            return jsonify({"success": True, "data": rows})
+        page_rows, meta = paginate_items(rows, page=pagination["page"], page_size=pagination["page_size"])
+        return jsonify({"success": True, "data": page_rows, "meta": meta})
 
     def get_receipt(self, session_id: str):
         if not self.payment_service.session_belongs_to_garage(garage_id=g.current_user_garage_id, session_id=session_id):

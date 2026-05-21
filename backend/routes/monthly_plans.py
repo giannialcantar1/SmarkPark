@@ -5,6 +5,7 @@ from flask import Blueprint, g, jsonify, request
 from services import MonthlyPlanService
 from services.user_service import UserService
 from utils.decorators import auth_required
+from utils.pagination import get_pagination_params, paginate_items
 from utils.supabase_client import get_user_table_client, insert_row, normalize_text, update_rows, utcnow_iso
 
 
@@ -108,7 +109,11 @@ def list_monthly_plans():
         plans = service.list_plans(garage_id=g.current_user_garage_id)
     except RuntimeError as exc:
         return jsonify({"success": False, "error": str(exc)}), 500
-    return jsonify({"success": True, "data": plans})
+    pagination = get_pagination_params()
+    if not pagination["enabled"]:
+        return jsonify({"success": True, "data": plans})
+    page_rows, meta = paginate_items(plans, page=pagination["page"], page_size=pagination["page_size"])
+    return jsonify({"success": True, "data": page_rows, "meta": meta})
 
 
 @monthly_plans_bp.get("/user/<user_id>")
@@ -164,7 +169,11 @@ def list_pending_monthly_plans():
         pending = service.list_pending(garage_id=g.current_user_garage_id)
     except RuntimeError as exc:
         return jsonify({"success": False, "error": str(exc)}), 500
-    return jsonify({"success": True, "data": pending})
+    pagination = get_pagination_params()
+    if not pagination["enabled"]:
+        return jsonify({"success": True, "data": pending})
+    page_rows, meta = paginate_items(pending, page=pagination["page"], page_size=pagination["page_size"])
+    return jsonify({"success": True, "data": page_rows, "meta": meta})
 
 
 @monthly_plans_bp.post("/process-payment")

@@ -6,11 +6,11 @@ from app.supabase_client import get_supabase_client
 
 
 class GarajeService:
-    """Encapsulates all access to garajes table scoped by tenant_id."""
+    """Encapsulates all access to garages table scoped by tenant_id."""
 
     def __init__(self) -> None:
         self._client = None
-        self.table_name = 'garajes'
+        self.table_name = 'garages'
 
     def _get_client(self):
         if self._client is None:

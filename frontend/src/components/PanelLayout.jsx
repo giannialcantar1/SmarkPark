@@ -9,9 +9,11 @@ import { ROLES, normalizeRole } from '../lib/roles'
 const menuLinks = {
   dashboard:          { to: '/dashboard',         label: 'Dashboard',              icon: 'dashboard' },
   gate:               { to: '/gate',              label: 'Panel de Porteria',      icon: 'shield_person' },
-  accessCodes:        { to: '/access-codes',      label: 'Acceso por Codigo',      icon: 'pin' },
+  qrAccess:           { to: '/qr-access',         label: 'Acceso por QR/Codigo',   icon: 'qr_code_scanner' },
   assignParking:      { to: '/parking/assign',    label: 'Asignar Parqueo',        icon: 'directions_car' },
   monthlyPlans:       { to: '/monthly-plans',     label: 'Planes Mensuales',       icon: 'payments' },
+  monthlyPayments:    { to: '/monthly-payments',  label: 'Pagos Mensuales',        icon: 'receipt_long' },
+  userSubscriptions:  { to: '/user/subscriptions', label: 'Mi Mensualidad',        icon: 'credit_card' },
   personnel:          { to: '/personnel',         label: 'Registro de Personal',   icon: 'badge' },
   morosidad:          { to: '/morosidad',         label: 'Morosidad',              icon: 'warning' },
   reservations:       { to: '/reservas',          label: 'Reservas',               icon: 'event_available' },
@@ -33,7 +35,7 @@ const menuOrderByRole = {
   [ROLES.ADMIN]: [
     menuLinks.dashboard,
     menuLinks.gate,
-    menuLinks.accessCodes,
+    menuLinks.qrAccess,
     'separator',
     menuLinks.assignParking,
     menuLinks.reservations,
@@ -50,6 +52,7 @@ const menuOrderByRole = {
     menuLinks.personnel,
     menuLinks.payments,
     menuLinks.monthlyPlans,
+    menuLinks.monthlyPayments,
     menuLinks.morosidad,
     menuLinks.reports,
     menuLinks.accessAlerts,
@@ -59,7 +62,7 @@ const menuOrderByRole = {
   [ROLES.PORTERO]: [
     menuLinks.dashboard,
     menuLinks.gate,
-    menuLinks.accessCodes,
+    menuLinks.qrAccess,
     menuLinks.assignParking,
     menuLinks.visitors,
     menuLinks.occupiedSpaces,
@@ -69,7 +72,7 @@ const menuOrderByRole = {
   [ROLES.OPERADOR]: [
     menuLinks.dashboard,
     menuLinks.gate,
-    menuLinks.accessCodes,
+    menuLinks.qrAccess,
     menuLinks.assignParking,
     menuLinks.visitors,
     menuLinks.occupiedSpaces,
@@ -79,7 +82,7 @@ const menuOrderByRole = {
   [ROLES.SEGURIDAD]: [
     menuLinks.dashboard,
     menuLinks.gate,
-    menuLinks.accessCodes,
+    menuLinks.qrAccess,
     menuLinks.visitors,
     menuLinks.occupiedSpaces,
     menuLinks.parkingHistory,
@@ -93,6 +96,7 @@ const menuOrderByRole = {
     menuLinks.settings,
   ],
   [ROLES.USUARIO]: [
+    menuLinks.userSubscriptions,
     menuLinks.vehicles,
     menuLinks.payments,
     menuLinks.reservations,
@@ -122,41 +126,29 @@ const WARM_CACHE_BY_ROLE = {
   [ROLES.ADMIN]: [
     '/api/dashboard/stats',
     '/api/notificaciones',
-    '/api/parking-spaces',
-    '/api/vehiculos',
-    '/api/auth/settings',
   ],
   [ROLES.PORTERO]: [
     '/api/dashboard/stats',
     '/api/notificaciones',
-    '/api/parking-spaces',
-    '/api/vehiculos',
   ],
   [ROLES.OPERADOR]: [
     '/api/dashboard/stats',
     '/api/notificaciones',
-    '/api/parking-spaces',
-    '/api/vehiculos',
   ],
   [ROLES.SEGURIDAD]: [
     '/api/dashboard/stats',
     '/api/notificaciones',
-    '/api/parking-spaces',
   ],
   [ROLES.MANTENIMIENTO]: [
     '/api/dashboard/stats',
-    '/api/parking-spaces',
   ],
   [ROLES.USUARIO]: [
     '/api/notificaciones',
-    '/api/vehiculos',
-    '/api/payments',
-    '/api/auth/settings',
   ],
 }
 
 export default function PanelLayout({ children }) {
-  const { logout, user } = useAuth()
+  const { isAuthenticated, loading, logout, user } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
   const [banner, setBanner] = useState('')
@@ -184,6 +176,7 @@ export default function PanelLayout({ children }) {
 
   useEffect(() => {
     if (typeof window === 'undefined') return
+    if (loading || !isAuthenticated) return
 
     const warmTargets = WARM_CACHE_BY_ROLE[currentRole] || []
     if (!warmTargets.length) return
@@ -209,7 +202,7 @@ export default function PanelLayout({ children }) {
         window.clearTimeout(timeoutId)
       }
     }
-  }, [currentRole])
+  }, [currentRole, isAuthenticated, loading])
 
   const handleLogout = async () => {
     await logout()
@@ -227,7 +220,7 @@ export default function PanelLayout({ children }) {
           <span className="brand-icon">
             <img
               className="brand-logo"
-              src="/images/logo-smartpark.png"
+              src="/favicon-smartpark-round.png"
               alt="SmartPark Logo"
             />
           </span>

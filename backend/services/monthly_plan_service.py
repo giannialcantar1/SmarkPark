@@ -98,6 +98,58 @@ class MonthlyPlanService:
             limit=500,
         )
 
+    @staticmethod
+    def _user_group_key(row: dict[str, Any]) -> str:
+        return (
+            normalize_text(row.get("user_id"))
+            or normalize_text(row.get("auth_user_id"))
+            or normalize_text(row.get("user_email"))
+            or normalize_text(row.get("email"))
+            or normalize_text(row.get("id"))
+        )
+
+    @staticmethod
+    def _to_amount(value: Any) -> float:
+        try:
+            return round(float(value or 0), 2)
+        except (TypeError, ValueError):
+            return 0.0
+
+    def _list_payment_rows(self, *, garage_id: str) -> list[dict[str, Any]]:
+        return select_rows(
+            "monthly_plan_payments",
+            filters=[{"column": "garage_id", "value": garage_id, "optional": True}],
+            order_candidates=["paid_at", "created_at"],
+            desc=True,
+            limit=1000,
+        )
+
+    def _latest_payments_by_user(self, *, garage_id: str, plans: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+        plan_user_by_id = {
+            normalize_text(row.get("id")): self._user_group_key(row)
+            for row in plans
+            if row.get("id")
+        }
+        latest_by_user: dict[str, dict[str, Any]] = {}
+
+        for row in self._list_payment_rows(garage_id=garage_id):
+            user_key = (
+                normalize_text(row.get("user_id"))
+                or plan_user_by_id.get(normalize_text(row.get("plan_id")))
+            )
+            if not user_key or user_key in latest_by_user:
+                continue
+
+            latest_by_user[user_key] = {
+                "fecha": row.get("paid_at") or row.get("created_at"),
+                "monto": self._to_amount(row.get("amount")),
+                "referencia": row.get("reference") or "",
+                "metodo": row.get("method") or "",
+                "estado": row.get("status") or "",
+            }
+
+        return latest_by_user
+
     def list_plans(self, *, garage_id: str) -> list[dict[str, Any]]:
         users = self._users_by_key(garage_id=garage_id)
         enriched: list[dict[str, Any]] = []
@@ -175,6 +227,144 @@ class MonthlyPlanService:
 
     def list_overdue(self, *, garage_id: str) -> list[dict[str, Any]]:
         return [row for row in self.list_plans(garage_id=garage_id) if row.get("status") == "vencido"]
+
+    def list_overdue_users(
+        self,
+        *,
+        garage_id: str,
+        search: str = "",
+        min_days: int | None = None,
+        max_days: int | None = None,
+    ) -> list[dict[str, Any]]:
+        plans = self.list_plans(garage_id=garage_id)
+        overdue_plans = [row for row in plans if row.get("status") == "vencido"]
+        pending_plans = [row for row in plans if row.get("status") in {"pendiente", "vencido"}]
+
+        pending_count_by_user: dict[str, int] = {}
+        for row in pending_plans:
+            user_key = self._user_group_key(row)
+            if not user_key:
+                continue
+            pending_count_by_user[user_key] = pending_count_by_user.get(user_key, 0) + 1
+
+        latest_payment_by_user = self._latest_payments_by_user(garage_id=garage_id, plans=plans)
+        aggregated: dict[str, dict[str, Any]] = {}
+
+        for row in overdue_plans:
+            user_key = self._user_group_key(row)
+            if not user_key:
+                continue
+
+            due_date = row.get("due_date")
+            company_name = (
+                row.get("company_name")
+                or row.get("empresa")
+                or row.get("garage_name")
+                or row.get("company")
+                or ""
+            )
+
+            current = aggregated.setdefault(
+                user_key,
+                {
+                    "id": row.get("user_id") or row.get("id") or user_key,
+                    "user_id": row.get("user_id"),
+                    "usuario": row.get("user_name") or row.get("user_email") or "Usuario",
+                    "usuario_email": row.get("user_email") or "",
+                    "garaje": company_name or garage_id,
+                    "garage_id": garage_id,
+                    "deuda_total": 0.0,
+                    "dias_vencidos": 0,
+                    "ultimo_pago": latest_payment_by_user.get(user_key),
+                    "planes_pendientes": pending_count_by_user.get(user_key, 0),
+                    "plan_ids": [],
+                    "ultimo_vencimiento": due_date,
+                    "status": "moroso",
+                },
+            )
+
+            current["deuda_total"] = round(current["deuda_total"] + self._to_amount(row.get("amount")), 2)
+            current["dias_vencidos"] = max(int(current.get("dias_vencidos") or 0), int(row.get("days_overdue") or 0))
+            current["planes_pendientes"] = max(int(current.get("planes_pendientes") or 0), pending_count_by_user.get(user_key, 0))
+            current["plan_ids"].append(row.get("id"))
+
+            current_due = parse_datetime(current.get("ultimo_vencimiento"))
+            candidate_due = parse_datetime(due_date)
+            if candidate_due and (current_due is None or candidate_due < current_due):
+                current["ultimo_vencimiento"] = due_date
+
+        normalized_search = normalize_text(search)
+        rows: list[dict[str, Any]] = []
+        for current in aggregated.values():
+            dias_vencidos = int(current.get("dias_vencidos") or 0)
+            if min_days is not None and dias_vencidos < min_days:
+                continue
+            if max_days is not None and dias_vencidos > max_days:
+                continue
+
+            if normalized_search:
+                haystack = " ".join(
+                    [
+                        normalize_text(current.get("usuario")),
+                        normalize_text(current.get("usuario_email")),
+                        normalize_text(current.get("garaje")),
+                        normalize_text(current.get("garage_id")),
+                    ]
+                )
+                if normalized_search not in haystack:
+                    continue
+
+            ultimo_pago = current.get("ultimo_pago") or None
+            rows.append(
+                {
+                    **current,
+                    "deuda_total": round(float(current.get("deuda_total") or 0), 2),
+                    "amount": round(float(current.get("deuda_total") or 0), 2),
+                    "user_name": current.get("usuario"),
+                    "user_email": current.get("usuario_email"),
+                    "days_overdue": dias_vencidos,
+                    "ultimo_pago": ultimo_pago,
+                    "last_payment": ultimo_pago,
+                    "ultimo_pago_fecha": (ultimo_pago or {}).get("fecha"),
+                    "ultimo_pago_monto": (ultimo_pago or {}).get("monto", 0),
+                    "ultimo_pago_referencia": (ultimo_pago or {}).get("referencia", ""),
+                    "ultimo_pago_metodo": (ultimo_pago or {}).get("metodo", ""),
+                }
+            )
+
+        rows.sort(
+            key=lambda row: (
+                -int(row.get("dias_vencidos") or 0),
+                -float(row.get("deuda_total") or 0),
+                normalize_text(row.get("usuario")),
+            )
+        )
+        return rows
+
+    def overdue_user_stats(
+        self,
+        *,
+        garage_id: str,
+        search: str = "",
+        min_days: int | None = None,
+        max_days: int | None = None,
+    ) -> dict[str, Any]:
+        rows = self.list_overdue_users(
+            garage_id=garage_id,
+            search=search,
+            min_days=min_days,
+            max_days=max_days,
+        )
+        total_overdue_amount = round(sum(float(row.get("deuda_total") or 0) for row in rows), 2)
+        max_days_overdue = max((int(row.get("dias_vencidos") or 0) for row in rows), default=0)
+        pending_count = sum(int(row.get("planes_pendientes") or 0) for row in rows)
+
+        return {
+            "overdue_count": len(rows),
+            "total_overdue_amount": total_overdue_amount,
+            "max_days_overdue": max_days_overdue,
+            "pending_count": pending_count,
+        }
 
     def stats(self, *, garage_id: str) -> dict[str, Any]:
         plans = self.list_plans(garage_id=garage_id)

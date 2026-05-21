@@ -22,13 +22,13 @@ def _same_garage(row: dict) -> bool:
 def get_notificaciones():
     try:
         notifications_rows = select_rows(
-            "notificaciones",
+            "notifications",
             order_candidates=["created_at", "fecha"],
             desc=True,
             limit=50,
         )
         access_alert_rows = select_rows(
-            "alertas_acceso",
+            "access_alerts",
             order_candidates=["created_at", "fecha"],
             desc=True,
             limit=20,
@@ -90,10 +90,10 @@ def mark_notification_read(notification_id):
 
         if str(notification_id).startswith("alerta-"):
             alert_id = str(notification_id).replace("alerta-", "", 1)
-            client.from_("alertas_acceso").update({"estado": "leida"}).eq("id", alert_id).eq("garage_id", current_garage).execute()
+            client.from_("access_alerts").update({"estado": "leida"}).eq("id", alert_id).eq("garage_id", current_garage).execute()
             return jsonify({"success": True, "message": "Alerta marcada como leida"})
 
-        client.from_("notificaciones").update({"leida": True}).eq("id", notification_id).eq("garage_id", current_garage).execute()
+        client.from_("notifications").update({"leida": True}).eq("id", notification_id).eq("garage_id", current_garage).execute()
         return jsonify({"success": True, "message": "Notificacion marcada como leida"})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500

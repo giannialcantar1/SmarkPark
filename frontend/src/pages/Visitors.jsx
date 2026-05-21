@@ -549,10 +549,6 @@ export default function Visitors() {
           <h1 style={styles.title}>Visitantes</h1>
           <p style={styles.subtitle}>Registro temporal de visitantes, entradas, salidas y ocupacion activa.</p>
         </div>
-        <div style={styles.badge}>
-          <Icon name="person_add" size={16} />
-          RF7 - Gestion de visitantes
-        </div>
       </header>
 
       <section style={styles.metrics}>

@@ -1,10 +1,12 @@
-import { useEffect, useMemo, useState } from 'react'
+import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react'
 
-import ModalEntry from '../components/ModalEntry'
 import useApi from '../hooks/useApi'
+import useDeferredLoader from '../hooks/useDeferredLoader'
 import { getActiveSessions, getDashboardStats, getParkingSpaces, getVehicles } from '../services/api'
 
 import NotificationsBell from '../components/NotificationsBell'
+
+const ModalEntry = lazy(() => import('../components/ModalEntry'))
 
 const WEEK_LABELS = ['Lun', 'Mar', 'Mie', 'Jue', 'Vie', 'Sab', 'Dom']
 
@@ -24,6 +26,35 @@ function formatCompactMoney(value) {
     notation: 'compact',
     maximumFractionDigits: 1,
   }).format(Number(value) || 0)
+}
+
+function formatChartMoney(value) {
+  return new Intl.NumberFormat('es-DO', {
+    style: 'currency',
+    currency: 'DOP',
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(Number(value) || 0)
+}
+
+function formatAxisValue(value) {
+  return new Intl.NumberFormat('es-DO', {
+    maximumFractionDigits: 0,
+  }).format(Number(value) || 0)
+}
+
+function getChartStep(maxValue) {
+  const safeMax = Number(maxValue) || 0
+  if (safeMax <= 0) return 1000
+
+  const roughStep = safeMax / 4
+  const magnitude = 10 ** Math.floor(Math.log10(roughStep))
+  const normalized = roughStep / magnitude
+
+  if (normalized <= 1) return magnitude
+  if (normalized <= 2) return magnitude * 2
+  if (normalized <= 5) return magnitude * 5
+  return magnitude * 10
 }
 
 function formatPercent(value) {
@@ -221,11 +252,23 @@ export default function Dashboard() {
   const [isEntryOpen, setIsEntryOpen] = useState(false)
   const [activeFloor, setActiveFloor] = useState('A')
   const [lastUpdate, setLastUpdate] = useState(new Date())
+  const revenueChartCanvasRef = useRef(null)
+  const revenueChartInstanceRef = useRef(null)
 
   const statsApi = useApi(getDashboardStats, { immediate: true, retries: 0, initialData: {} })
-  const spacesApi = useApi(getParkingSpaces, { immediate: true, retries: 0, initialData: [] })
-  const vehiclesApi = useApi(getVehicles, { immediate: true, retries: 0, initialData: [] })
-  const activeSessionsApi = useApi(getActiveSessions, { immediate: true, retries: 0, initialData: [] })
+  const spacesApi = useApi(getParkingSpaces, { immediate: false, retries: 0, initialData: [] })
+  const vehiclesApi = useApi(getVehicles, { immediate: false, retries: 0, initialData: [] })
+  const activeSessionsApi = useApi(getActiveSessions, { immediate: false, retries: 0, initialData: [] })
+
+  useDeferredLoader(
+    () => Promise.all([
+      spacesApi.execute(),
+      vehiclesApi.execute(),
+      activeSessionsApi.execute(),
+    ]),
+    [spacesApi.execute, vehiclesApi.execute, activeSessionsApi.execute],
+    { timeout: 180 },
+  )
 
   // FIX: Actualización automática cada 5 segundos
   useEffect(() => {
@@ -235,7 +278,7 @@ export default function Dashboard() {
       vehiclesApi.execute()
       activeSessionsApi.execute()
       setLastUpdate(new Date())
-    }, 5000) // 5 segundos
+    }, 20000)
     
     return () => clearInterval(interval)
   }, [])
@@ -368,6 +411,172 @@ export default function Dashboard() {
     if (activeSessions.length) return buildSessionRevenueTrend(activeSessions, vehicles)
     return buildRevenueTrend(vehicles)
   }, [activeSessions, vehicles, stats.weeklyIncome])
+  const revenueChartMax = useMemo(
+    () => revenueTrend.reduce((maxValue, item) => Math.max(maxValue, Number(item.value) || 0), 0),
+    [revenueTrend],
+  )
+
+  useEffect(() => {
+    let isCancelled = false
+
+    const renderRevenueChart = async () => {
+      const canvas = revenueChartCanvasRef.current
+      if (!canvas) return
+
+      const chartModule = await import('chart.js/auto')
+      if (isCancelled) return
+
+      const Chart = chartModule.default || chartModule.Chart
+      if (!Chart) return
+
+      revenueChartInstanceRef.current?.destroy()
+
+      const stepSize = getChartStep(revenueChartMax)
+      const suggestedMax = revenueChartMax
+        ? Math.max(stepSize * 4, Math.ceil(revenueChartMax / stepSize) * stepSize)
+        : stepSize * 4
+
+      const valueLabelPlugin = {
+        id: 'smartparkRevenueLabels',
+        afterDatasetsDraw(chart) {
+          const { ctx, scales } = chart
+          const meta = chart.getDatasetMeta(0)
+          const baselineY = scales.y.getPixelForValue(0)
+
+          ctx.save()
+          ctx.textAlign = 'center'
+          ctx.textBaseline = 'bottom'
+
+          meta.data.forEach((bar, index) => {
+            const item = revenueTrend[index]
+            if (!item) return
+
+            const labelY = item.value > 0 ? bar.y - 10 : baselineY - 10
+            ctx.fillStyle = item.active ? '#f8fafc' : 'rgba(226, 232, 240, 0.88)'
+            ctx.font = `600 ${item.value > 0 ? 12 : 11}px Inter, Segoe UI, sans-serif`
+            ctx.fillText(formatChartMoney(item.value), bar.x, labelY)
+          })
+
+          ctx.restore()
+        },
+      }
+
+      revenueChartInstanceRef.current = new Chart(canvas, {
+        type: 'bar',
+        data: {
+          labels: revenueTrend.map((item) => item.label),
+          datasets: [
+            {
+              data: revenueTrend.map((item) => item.value),
+              backgroundColor: revenueTrend.map((item) =>
+                item.active ? 'rgba(34, 211, 238, 0.96)' : 'rgba(25, 132, 162, 0.82)',
+              ),
+              borderColor: revenueTrend.map((item) =>
+                item.active ? 'rgba(125, 240, 255, 1)' : 'rgba(61, 180, 204, 1)',
+              ),
+              borderWidth: 1,
+              borderRadius: 16,
+              borderSkipped: false,
+              barThickness: 42,
+              maxBarThickness: 54,
+              categoryPercentage: 0.7,
+              barPercentage: 0.92,
+              hoverBackgroundColor: revenueTrend.map((item) =>
+                item.active ? 'rgba(78, 224, 245, 1)' : 'rgba(34, 160, 188, 0.92)',
+              ),
+            },
+          ],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          animation: {
+            duration: 450,
+          },
+          layout: {
+            padding: {
+              top: 28,
+              right: 12,
+              left: 6,
+              bottom: 0,
+            },
+          },
+          plugins: {
+            legend: {
+              display: false,
+            },
+            tooltip: {
+              displayColors: false,
+              backgroundColor: 'rgba(5, 16, 25, 0.96)',
+              borderColor: 'rgba(90, 202, 249, 0.24)',
+              borderWidth: 1,
+              titleColor: '#e2e8f0',
+              bodyColor: '#f8fafc',
+              padding: 12,
+              callbacks: {
+                title(items) {
+                  return items[0]?.label || ''
+                },
+                label(context) {
+                  return `Ingreso: ${formatMoney(context.parsed.y)}`
+                },
+              },
+            },
+          },
+          scales: {
+            x: {
+              grid: {
+                display: false,
+              },
+              border: {
+                display: false,
+              },
+              ticks: {
+                color: '#e2e8f0',
+                font: {
+                  size: 13,
+                  weight: '600',
+                },
+                padding: 10,
+              },
+            },
+            y: {
+              beginAtZero: true,
+              suggestedMax,
+              ticks: {
+                stepSize,
+                color: 'rgba(148, 163, 184, 0.9)',
+                padding: 12,
+                font: {
+                  size: 12,
+                  weight: '600',
+                },
+                callback(value) {
+                  return formatAxisValue(value)
+                },
+              },
+              grid: {
+                color: 'rgba(148, 163, 184, 0.14)',
+                drawTicks: false,
+              },
+              border: {
+                display: false,
+              },
+            },
+          },
+        },
+        plugins: [valueLabelPlugin],
+      })
+    }
+
+    renderRevenueChart().catch(() => null)
+
+    return () => {
+      isCancelled = true
+      revenueChartInstanceRef.current?.destroy()
+      revenueChartInstanceRef.current = null
+    }
+  }, [revenueChartMax, revenueTrend])
   const recentActivity = useMemo(
     () => buildRecentActivity(stats.recentActivity, vehicles),
     [stats.recentActivity, vehicles],
@@ -457,16 +666,6 @@ export default function Dashboard() {
               <div className="sp-bell-fix">
                 <NotificationsBell />
               </div>
-
-              <button
-                type="button"
-                className="dashboard-pro__icon-btn"
-                onClick={handleRefresh}
-                title="Actualizar dashboard"
-                aria-label="Actualizar dashboard"
-              >
-                <span className="material-symbols-outlined">refresh</span>
-              </button>
 
               <button
                 type="button"
@@ -581,16 +780,15 @@ export default function Dashboard() {
               </div>
 
               <div className="dashboard-pro__chart">
-                {revenueTrend.map((item) => (
-                  <div key={item.label} className="dashboard-pro__chart-col" title={`${item.label}: ${formatMoney(item.value)}`}>
-                    <div className={`dashboard-pro__chart-bar${item.active ? ' active' : ''}`} style={{ height: `${item.height}%` }}>
-                      <span style={{ fontSize: '10px', color: '#fff', position: 'absolute', top: '-18px', left: '50%', transform: 'translateX(-50%)' }}>
-                        {item.value > 0 ? `$${Math.round(item.value)}` : ''}
-                      </span>
-                    </div>
-                    <span>{item.label}</span>
+                <div className="dashboard-pro__chart-shell">
+                  <div className="dashboard-pro__chart-canvas">
+                    <canvas ref={revenueChartCanvasRef} aria-label="Tendencia semanal de ingresos" role="img" />
                   </div>
-                ))}
+                  <div className="dashboard-pro__chart-meta">
+                    <span>Escala semanal basada en ingresos reales del backend.</span>
+                    <span>Máximo actual: {formatChartMoney(revenueChartMax)}</span>
+                  </div>
+                </div>
               </div>
             </article>
           </div>
@@ -673,13 +871,15 @@ export default function Dashboard() {
         </section>
       </div>
 
-      <ModalEntry
-        isOpen={isEntryOpen}
-        onClose={() => setIsEntryOpen(false)}
-        onSuccess={async () => {
-          await handleRefresh()
-        }}
-      />
+      <Suspense fallback={null}>
+        <ModalEntry
+          isOpen={isEntryOpen}
+          onClose={() => setIsEntryOpen(false)}
+          onSuccess={async () => {
+            await handleRefresh()
+          }}
+        />
+      </Suspense>
     </>
   )
 }

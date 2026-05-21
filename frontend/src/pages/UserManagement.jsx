@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
 
+import useChunkedList from '../hooks/useChunkedList'
+import useDeferredLoader from '../hooks/useDeferredLoader'
 import { apiGet, apiPut, getCachedApiData } from '../lib/api'
 import { ROLES } from '../lib/roles'
 
@@ -28,6 +30,8 @@ const formatDate = (value) => {
 const getInitial = (name, email) =>
   ((name || email || 'U').trim().charAt(0)).toUpperCase()
 
+const PAGE_SIZE = 50
+
 /* --- Palette --- */
 const C = {
   bg:        'var(--bg)',
@@ -52,16 +56,16 @@ const s = {
 
   breadcrumb: {
     display: 'flex', alignItems: 'center', gap: 6,
-    fontSize: 14, fontWeight: 600, color: C.textSoft, marginBottom: 4,
+    fontSize: 12, fontWeight: 500, color: C.textSoft, marginBottom: 4,
   },
   breadcrumbAccent: { color: C.accent },
   pageTitle: {
     margin: 0,
-    fontSize: 'clamp(2rem,4.5vw,3.4rem)',
-    fontWeight: 800, fontFamily: "'Syne', sans-serif", background: 'linear-gradient(135deg, #e2e8f0 30%, var(--accent) 100%)', WebkitBackgroundClip: 'text', backgroundClip: 'text', color: 'transparent',
-    lineHeight: 1.05, letterSpacing: '-0.5px',
+    fontSize: 'var(--font-size-h1)',
+    fontWeight: 600, fontFamily: "'Syne', sans-serif", background: 'linear-gradient(135deg, #e2e8f0 30%, var(--accent) 100%)', WebkitBackgroundClip: 'text', backgroundClip: 'text', color: 'transparent',
+    lineHeight: 1.2, letterSpacing: '-0.5px',
   },
-  pageSub: { margin: '6px 0 20px', color: C.textSoft, fontSize: '1rem' },
+  pageSub: { margin: '6px 0 20px', color: C.textSoft, fontSize: 14, lineHeight: 1.55 },
 
   /* stats */
   statsBar: {
@@ -84,22 +88,22 @@ const s = {
     color: accent, fontSize: 19, flexShrink: 0,
   }),
   statLabel: {
-    fontSize: 10, fontWeight: 700, letterSpacing: '0.08em',
+    fontSize: 12, fontWeight: 500, letterSpacing: '0.08em',
     color: C.textSoft, textTransform: 'uppercase', marginBottom: 4,
   },
-  statValue: { fontSize: 24, fontWeight: 800, fontFamily: "'Syne', sans-serif", background: 'linear-gradient(135deg, #e2e8f0 30%, var(--accent) 100%)', WebkitBackgroundClip: 'text', backgroundClip: 'text', color: 'transparent', lineHeight: 1 },
+  statValue: { fontSize: 30, fontWeight: 600, fontFamily: "'Syne', sans-serif", background: 'linear-gradient(135deg, #e2e8f0 30%, var(--accent) 100%)', WebkitBackgroundClip: 'text', backgroundClip: 'text', color: 'transparent', lineHeight: 1.1 },
 
   /* feedback */
   feedbackError: {
     borderRadius: 12, padding: '12px 16px', marginBottom: 16,
     background: 'rgba(110,16,16,0.28)', border: '1px solid rgba(248,81,73,0.45)',
-    color: '#ffb4b1', fontWeight: 600, fontSize: 13,
+    color: '#ffb4b1', fontWeight: 500, fontSize: 14, lineHeight: 1.55,
     display: 'flex', alignItems: 'center', gap: 8,
   },
   feedbackSuccess: {
     borderRadius: 12, padding: '12px 16px', marginBottom: 16,
     background: 'rgba(26,127,55,0.22)', border: '1px solid rgba(63,185,80,0.38)',
-    color: '#9be9a8', fontWeight: 600, fontSize: 13,
+    color: '#9be9a8', fontWeight: 500, fontSize: 14, lineHeight: 1.55,
     display: 'flex', alignItems: 'center', gap: 8,
   },
 
@@ -115,12 +119,12 @@ const s = {
     padding: '16px 24px',
     borderBottom: `1px solid ${C.border}`,
   },
-  tableTitle: { fontSize: 14, fontWeight: 700, color: '#fff', margin: 0 },
-  tableSub: { fontSize: 12, color: C.textSoft, marginTop: 2 },
+  tableTitle: { fontSize: 'var(--font-size-h2)', fontWeight: 600, color: '#fff', lineHeight: 1.2, margin: 0 },
+  tableSub: { fontSize: 14, color: C.textSoft, lineHeight: 1.55, marginTop: 2 },
   tableCount: {
     fontSize: 12, color: C.textSoft,
     background: C.cardDeep, border: `1px solid ${C.border}`,
-    borderRadius: 20, padding: '4px 12px', fontWeight: 600,
+    borderRadius: 20, padding: '4px 12px', fontWeight: 500,
   },
 
   /* search */
@@ -134,7 +138,7 @@ const s = {
     background: C.cardDeep, border: `1px solid ${C.borderMid}`,
     borderRadius: 8, color: '#fff',
     padding: '8px 14px 8px 36px',
-    fontSize: 13, outline: 'none', fontFamily: 'inherit',
+    fontSize: 14, outline: 'none', fontFamily: 'inherit',
     boxSizing: 'border-box',
   },
   searchIcon: {
@@ -152,7 +156,7 @@ const s = {
     borderBottom: `1px solid ${C.border}`,
   },
   colTh: {
-    fontSize: 10, fontWeight: 700, letterSpacing: '0.08em',
+    fontSize: 12, fontWeight: 500, letterSpacing: '0.08em',
     color: C.textSoft, textTransform: 'uppercase',
   },
 
@@ -174,16 +178,16 @@ const s = {
     background: 'rgba(9,131,200,0.2)',
     border: `1px solid rgba(9,131,200,0.3)`,
     display: 'flex', alignItems: 'center', justifyContent: 'center',
-    color: C.accent, fontWeight: 800, fontSize: 15,
+    color: C.accent, fontWeight: 600, fontSize: 14,
     flexShrink: 0,
   }),
-  userName: { fontSize: 13, fontWeight: 700, color: '#fff' },
-  userId: { fontSize: 11, color: C.textSoft, marginTop: 1 },
+  userName: { fontSize: 14, fontWeight: 600, color: '#fff', lineHeight: 1.35 },
+  userId: { fontSize: 12, color: C.textSoft, lineHeight: 1.35, marginTop: 1 },
 
   /* email */
   emailBlock: {
     display: 'inline-flex', alignItems: 'center', gap: 6,
-    fontSize: 12, color: C.textSoft,
+    fontSize: 14, color: C.textSoft, lineHeight: 1.55,
   },
 
   /* role select */
@@ -197,7 +201,7 @@ const s = {
       border: `1px solid ${t.border}`,
       borderRadius: 20,
       padding: '5px 30px 5px 12px',
-      fontSize: 12, fontWeight: 700,
+      fontSize: 12, fontWeight: 500,
       cursor: 'pointer',
       fontFamily: 'inherit',
       outline: 'none',
@@ -216,7 +220,7 @@ const s = {
   },
 
   /* date */
-  tdDate: { fontSize: 12, color: C.textSoft },
+  tdDate: { fontSize: 12, color: C.textSoft, lineHeight: 1.35 },
 
   /* empty */
   empty: { padding: '52px 24px', textAlign: 'center', color: C.textSoft },
@@ -244,6 +248,7 @@ const Icon = ({ name, size = 16 }) => (
 
 export default function UserManagement() {
   const cachedUsers = getCachedApiData('/api/usuarios/')
+  const cachedOverdue = getCachedApiData('/api/morosidad/usuarios')
   const [users, setUsers] = useState(Array.isArray(cachedUsers?.data) ? cachedUsers.data : [])
   const [loading, setLoading] = useState(!cachedUsers)
   const [error, setError] = useState(null)
@@ -251,19 +256,17 @@ export default function UserManagement() {
   const [savingId, setSavingId] = useState(null)
   const [search, setSearch] = useState('')
   const [hoveredRow, setHoveredRow] = useState(null)
-  const [overdueUserIds, setOverdueUserIds] = useState(new Set())
+  const [overdueUserIds, setOverdueUserIds] = useState(
+    () => new Set((Array.isArray(cachedOverdue?.data) ? cachedOverdue.data : []).map((row) => String(row.user_id || ''))),
+  )
+  const [loadingOverdue, setLoadingOverdue] = useState(false)
 
   const loadUsers = async ({ showLoader = true } = {}) => {
     if (showLoader) setLoading(true)
     setError(null)
     try {
-      const [payload, overduePayload] = await Promise.all([
-        apiGet('/api/usuarios/'),
-        apiGet('/api/morosidad/usuarios').catch(() => ({ data: [] })),
-      ])
+      const payload = await apiGet('/api/usuarios/', { forceFresh: true })
       setUsers(Array.isArray(payload?.data) ? payload.data : [])
-      const overdueRows = Array.isArray(overduePayload?.data) ? overduePayload.data : []
-      setOverdueUserIds(new Set(overdueRows.map((row) => String(row.user_id || ''))))
     } catch (err) {
       setError(err.message || 'No fue posible cargar los usuarios.')
     } finally {
@@ -271,7 +274,26 @@ export default function UserManagement() {
     }
   }
 
-  useEffect(() => { loadUsers({ showLoader: !cachedUsers }) }, [])
+  const loadOverdueUsers = async () => {
+    setLoadingOverdue(true)
+    try {
+      const overduePayload = await apiGet('/api/morosidad/usuarios', { forceFresh: true }).catch(() => ({ data: [] }))
+      const overdueRows = Array.isArray(overduePayload?.data) ? overduePayload.data : []
+      setOverdueUserIds(new Set(overdueRows.map((row) => String(row.user_id || ''))))
+    } finally {
+      setLoadingOverdue(false)
+    }
+  }
+
+  useEffect(() => {
+    loadUsers({ showLoader: !cachedUsers })
+  }, [])
+
+  useDeferredLoader(
+    () => loadOverdueUsers(),
+    [],
+    { enabled: true, timeout: 180 },
+  )
 
   const handleRoleChange = async (userId, role) => {
     setSavingId(userId)
@@ -294,6 +316,16 @@ export default function UserManagement() {
         (u.email || '').toLowerCase().includes(search.toLowerCase()),
       )
     : users
+
+  const {
+    hasMore,
+    sentinelRef,
+    visibleCount,
+    visibleItems: visibleUsers,
+  } = useChunkedList(filteredUsers, {
+    enabled: !loading,
+    pageSize: PAGE_SIZE,
+  })
 
   const roleCounts = users.reduce((acc, u) => {
     const r = u.role || ROLES.USUARIO
@@ -368,6 +400,11 @@ export default function UserManagement() {
               style={s.searchInput}
             />
           </div>
+          {loadingOverdue && (
+            <span style={{ fontSize: 12, color: C.textSoft, whiteSpace: 'nowrap' }}>
+              Sincronizando morosidad...
+            </span>
+          )}
         </div>
 
         {/* col headers */}
@@ -400,7 +437,7 @@ export default function UserManagement() {
         )}
 
         {/* rows */}
-        {!loading && filteredUsers.map((user) => {
+        {!loading && visibleUsers.map((user) => {
           const roleVal = user.role || ROLES.USUARIO
           const roleTheme = ROLE_STYLE[roleVal] || ROLE_STYLE[ROLES.USUARIO]
           const initial = getInitial(user.name, user.email)
@@ -430,8 +467,8 @@ export default function UserManagement() {
                         background: 'rgba(127,29,29,0.28)',
                         border: '1px solid rgba(248,113,113,0.28)',
                         color: '#fecaca',
-                        fontSize: 11,
-                        fontWeight: 800,
+                        fontSize: 12,
+                        fontWeight: 600,
                       }}>
                         Moroso
                       </span>
@@ -481,6 +518,21 @@ export default function UserManagement() {
             </div>
           )
         })}
+
+        {!loading && filteredUsers.length > 0 && (
+          <div style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            gap: 12,
+            padding: '14px 24px',
+            color: C.textSoft,
+            fontSize: 12,
+          }}>
+            <span>Mostrando {visibleCount} de {filteredUsers.length} usuarios</span>
+            {hasMore ? <span ref={sentinelRef}>Cargando mas...</span> : <span>Fin del listado</span>}
+          </div>
+        )}
       </div>
     </div>
   )

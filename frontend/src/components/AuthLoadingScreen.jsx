@@ -4,7 +4,7 @@ export default function AuthLoadingScreen({ message = 'Verificando sesión...' }
       <div className="auth-loading-panel">
         <img
           className="auth-loading-logo"
-          src="/images/logo-smartpark.png"
+          src="/favicon-smartpark-round.png"
           alt="Logo de SmartPark"
         />
         <div className="auth-loading-spinner" aria-hidden="true" />

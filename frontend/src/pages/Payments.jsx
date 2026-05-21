@@ -1,8 +1,24 @@
 import { useEffect, useMemo, useState } from 'react'
 
-import { apiGet, apiPost, getCachedApiData } from '../lib/api'
+import useDeferredLoader from '../hooks/useDeferredLoader'
+import { DEFAULT_PAGE_SIZE, apiGet, apiPost, buildPaginatedPath, getCachedApiData, getPaginationMeta } from '../lib/api'
+import CreditCardPreview from '../components/PaymentModal/CreditCardPreview'
+import paymentUi from '../components/PaymentModal/PaymentModal.module.css'
 
 const ITBIS_RATE = 0.18
+const PAGE_SIZE = DEFAULT_PAGE_SIZE
+const EMPTY_CARD = {
+  number: '',
+  holder: '',
+  expiry: '',
+  cvv: '',
+}
+
+const EMPTY_TRANSFER = {
+  reference: '',
+  date: '',
+  receipt: null,
+}
 
 const formatCurrency = (value) =>
   new Intl.NumberFormat('es-DO', {
@@ -49,7 +65,41 @@ const normalizeSpace = (space = {}) => ({
 
 const getBillableHours = (minutes) => Math.max(1, Math.ceil(Math.max(0, Number(minutes || 0)) / 60))
 
-function buildInvoiceData({ vehicle, exitTime, hourlyRate }) {
+const getPaymentMethodLabel = (method) => {
+  if (method === 'tarjeta') return 'Tarjeta de credito'
+  if (method === 'transferencia') return 'Transferencia bancaria'
+  return ''
+}
+
+const buildCheckoutReference = (method, vehicle) => {
+  const prefix = method === 'transferencia' ? 'TRF' : 'CARD'
+  const plate = String(vehicle?.placa || 'PAGO')
+    .replace(/[^A-Z0-9]/gi, '')
+    .toUpperCase()
+    .slice(0, 8) || 'PAGO'
+  return `${prefix}-${plate}-${Date.now().toString().slice(-6)}`
+}
+
+const detectCardBrand = (value) => {
+  const digits = String(value || '').replace(/\D/g, '')
+  if (digits.startsWith('4')) return 'visa'
+  if (/^3[47]/.test(digits)) return 'amex'
+  if (/^5[1-5]/.test(digits) || /^2(2[2-9]|[3-6]\d|7[01])/.test(digits)) return 'mastercard'
+  return 'unknown'
+}
+
+const formatCardNumber = (value) => {
+  const digits = String(value || '').replace(/\D/g, '').slice(0, 16)
+  return digits.replace(/(.{4})/g, '$1 ').trim()
+}
+
+const buildCardReference = (cardNumber, vehicle) => {
+  const digits = String(cardNumber || '').replace(/\D/g, '')
+  if (digits.length >= 4) return `CARD-${digits.slice(-4)}`
+  return buildCheckoutReference('tarjeta', vehicle)
+}
+
+function buildInvoiceData({ vehicle, exitTime, hourlyRate, paymentMethod = '', paymentReference = '' }) {
   const entryDate = parseDate(vehicle?.hora_entrada || vehicle?.entry_time)
   const exitDate = exitTime || new Date()
   const totalMinutes = Math.max(1, Math.ceil((exitDate.getTime() - (entryDate?.getTime() || 0)) / 60000))
@@ -76,6 +126,9 @@ function buildInvoiceData({ vehicle, exitTime, hourlyRate }) {
     totalRaw: totalAmount,
     subtotalRaw: subtotalAmount,
     itbisRaw: itbisAmount,
+    metodo: paymentMethod,
+    metodoLabel: getPaymentMethodLabel(paymentMethod),
+    referenciaPago: String(paymentReference || '').trim(),
   }
 }
 
@@ -187,6 +240,18 @@ function buildPrintableInvoice(invoice) {
         <div class="info-card-sub">${invoice.modelo}</div>
       </div>
     </div>
+    ${invoice.metodoLabel || invoice.referenciaPago ? `
+    <div class="section-label">Pago</div>
+    <div class="client-grid">
+      <div class="info-card">
+        <div class="info-card-label">Metodo de pago</div>
+        <div class="info-card-value">${invoice.metodoLabel || 'No especificado'}</div>
+      </div>
+      <div class="info-card">
+        <div class="info-card-label">Referencia</div>
+        <div class="info-card-value">${invoice.referenciaPago || 'No especificada'}</div>
+      </div>
+    </div>` : ''}
     <div class="section-label">Detalle del servicio</div>
     <div class="table-wrap">
       <table>
@@ -285,18 +350,18 @@ const s = {
     display: 'flex', alignItems: 'center', justifyContent: 'center',
     color: accent, fontSize: 19, flexShrink: 0,
   }),
-  statLabel: { fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', color: C.textSoft, textTransform: 'uppercase', marginBottom: 4 },
-  statValue: { fontSize: 22, fontWeight: 800, lineHeight: 1 },
+  statLabel: { fontSize: 12, fontWeight: 500, letterSpacing: '0.08em', color: C.textSoft, textTransform: 'uppercase', lineHeight: 1.35, marginBottom: 4 },
+  statValue: { fontSize: 30, fontWeight: 600, lineHeight: 1.1 },
   feedbackError: {
     borderRadius: 12, padding: '12px 16px', marginBottom: 16,
     background: 'rgba(110,16,16,0.28)', border: '1px solid rgba(248,81,73,0.45)',
-    color: '#ffb4b1', fontWeight: 600, fontSize: 13,
+    color: '#ffb4b1', fontWeight: 500, fontSize: 14, lineHeight: 1.55,
     display: 'flex', alignItems: 'center', gap: 8,
   },
   feedbackSuccess: {
     borderRadius: 12, padding: '12px 16px', marginBottom: 16,
     background: 'rgba(63,185,80,0.18)', border: '1px solid rgba(63,185,80,0.45)',
-    color: '#7ee787', fontWeight: 600, fontSize: 13,
+    color: '#7ee787', fontWeight: 500, fontSize: 14, lineHeight: 1.55,
     display: 'flex', alignItems: 'center', gap: 8,
   },
   cardsGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px,1fr))', gap: 14 },
@@ -311,11 +376,11 @@ const s = {
   cardTop: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' },
   cardSpaceBadge: {
     background: 'rgba(9,131,200,0.18)', color: C.accent,
-    fontWeight: 800, fontSize: 13, borderRadius: 7, padding: '4px 10px', letterSpacing: '0.03em',
+    fontWeight: 600, fontSize: 12, borderRadius: 7, padding: '4px 10px', letterSpacing: '0.03em',
   },
   activeBadge: {
     display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 10px', borderRadius: 20,
-    fontSize: 11, fontWeight: 700, background: 'rgba(63,185,80,0.12)', color: C.success,
+    fontSize: 12, fontWeight: 600, background: 'rgba(63,185,80,0.12)', color: C.success,
     border: `1px solid rgba(63,185,80,0.3)`,
   },
   activeDot: { width: 6, height: 6, borderRadius: '50%', background: C.success, animation: 'pulse 1.5s infinite' },
@@ -324,27 +389,47 @@ const s = {
     width: 34, height: 34, borderRadius: 8, background: 'rgba(9,131,200,0.12)',
     display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.accent, fontSize: 20, flexShrink: 0,
   },
-  cardPlaca: { fontSize: 14, fontWeight: 800, color: '#fff', lineHeight: 1 },
-  cardDetalle: { fontSize: 11, color: C.textSoft, marginTop: 3 },
+  cardPlaca: { fontSize: 16, fontWeight: 600, color: '#fff', lineHeight: 1.2 },
+  cardDetalle: { fontSize: 14, color: C.textSoft, lineHeight: 1.55, marginTop: 3 },
   cardMeta: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 },
   metaItem: { background: C.cardDeep, borderRadius: 8, padding: '8px 10px' },
-  metaLabel: { fontSize: 10, color: C.textSoft, marginBottom: 3 },
-  metaVal: { fontSize: 12, fontWeight: 700, color: '#fff' },
+  metaLabel: { fontSize: 12, color: C.textSoft, lineHeight: 1.35, marginBottom: 3 },
+  metaVal: { fontSize: 14, fontWeight: 600, color: '#fff', lineHeight: 1.35 },
   cardCostRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: 12, borderTop: `1px solid ${C.border}` },
-  costLabel: { fontSize: 10, color: C.textSoft, marginBottom: 2 },
-  costVal: { fontSize: 18, fontWeight: 800, color: C.success },
+  costLabel: { fontSize: 12, color: C.textSoft, lineHeight: 1.35, marginBottom: 2 },
+  costVal: { fontSize: 28, fontWeight: 600, color: C.success, lineHeight: 1.1 },
   cardActions: { display: 'flex', gap: 8 },
   btnSecondary: {
     flex: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6,
     padding: '9px 0', background: C.cardDeep, color: C.textSoft, border: `1px solid rgba(90,202,249,0.20)`,
-    borderRadius: 9, fontWeight: 700, fontSize: 12, cursor: 'pointer', fontFamily: 'inherit',
+    borderRadius: 9, fontWeight: 600, fontSize: 14, cursor: 'pointer', fontFamily: 'inherit',
   },
   btnPrimary: {
     flex: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6,
     padding: '9px 0', background: 'var(--accent)', color: '#080f1e',
     boxShadow: '0 14px 34px rgba(56,189,248,0.18)', border: 'none',
-    borderRadius: 9, fontWeight: 700, fontSize: 12, cursor: 'pointer', fontFamily: 'inherit',
+    borderRadius: 9, fontWeight: 600, fontSize: 14, cursor: 'pointer', fontFamily: 'inherit',
   },
+  button: (variant = 'primary', disabled = false) => ({
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    padding: '9px 14px',
+    borderRadius: 9,
+    border: variant === 'ghost' ? '1px solid rgba(90,202,249,0.20)' : 'none',
+    background: disabled
+      ? 'rgba(56,189,248,0.16)'
+      : variant === 'ghost'
+        ? C.cardDeep
+        : 'var(--accent)',
+    color: variant === 'ghost' ? C.textSoft : '#080f1e',
+    fontWeight: 600,
+    fontSize: 14,
+    cursor: disabled ? 'not-allowed' : 'pointer',
+    fontFamily: 'inherit',
+    opacity: disabled ? 0.7 : 1,
+  }),
   empty: {
     gridColumn: '1/-1', background: C.card, border: `1px solid ${C.border}`,
     borderRadius: 14, padding: '56px 24px', textAlign: 'center', color: C.textSoft,
@@ -359,11 +444,31 @@ const s = {
     background: 'linear-gradient(90deg,#041f3a 0%,#0a3460 50%,#041f3a 100%)',
     backgroundSize: '200% 100%', animation: 'shimmer 1.25s linear infinite',
   },
-  backdrop: { position: 'fixed', inset: 0, background: 'rgba(1,4,9,0.85)', display: 'grid', placeItems: 'center', padding: 24, zIndex: 100, backdropFilter: 'blur(4px)' },
-  modal: { width: 'min(560px,100%)', background: C.card, border: `1px solid ${C.border}`, borderRadius: 18, padding: 28, boxShadow: '0 24px 48px rgba(0,0,0,0.32)' },
+  backdrop: {
+    position: 'fixed',
+    inset: 0,
+    background: 'rgba(1,4,9,0.85)',
+    display: 'grid',
+    placeItems: 'center',
+    padding: 24,
+    zIndex: 100,
+    backdropFilter: 'blur(4px)',
+    overflowY: 'auto',
+    overscrollBehavior: 'contain',
+  },
+  modal: {
+    width: 'min(560px,100%)',
+    maxHeight: 'calc(100dvh - 48px)',
+    background: C.card,
+    border: `1px solid ${C.border}`,
+    borderRadius: 18,
+    padding: 28,
+    boxShadow: '0 24px 48px rgba(0,0,0,0.32)',
+    overflowY: 'auto',
+  },
   modalHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 },
-  modalTitle: { fontSize: 18, fontWeight: 800, color: '#fff', margin: 0 },
-  modalSub: { fontSize: 12, color: C.textSoft, marginTop: 4 },
+  modalTitle: { fontSize: 'var(--font-size-h2)', fontWeight: 600, color: '#fff', lineHeight: 1.2, margin: 0 },
+  modalSub: { fontSize: 14, color: C.textSoft, lineHeight: 1.55, marginTop: 4 },
   closeBtn: {
     width: 34, height: 34, borderRadius: 8, background: C.cardDeep, border: `1px solid ${C.border}`,
     color: C.textSoft, display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -371,42 +476,45 @@ const s = {
   },
   invoiceGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 16 },
   invoiceItem: { background: C.cardDeep, borderRadius: 10, padding: '10px 14px' },
-  invoiceLabel: { fontSize: 10, color: C.textSoft, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 4 },
-  invoiceVal: { fontSize: 13, fontWeight: 700, color: '#fff' },
+  invoiceLabel: { fontSize: 12, color: C.textSoft, textTransform: 'uppercase', letterSpacing: '0.07em', lineHeight: 1.35, marginBottom: 4 },
+  invoiceVal: { fontSize: 14, fontWeight: 600, color: '#fff', lineHeight: 1.35 },
   divider: { height: 1, background: C.border, margin: '16px 0' },
   totalBox: {
     background: C.cardDeep, border: `1px solid rgba(9,131,200,0.3)`, borderRadius: 12, padding: '16px 18px',
     display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16,
   },
-  totalLabel: { fontSize: 12, color: C.textSoft },
-  totalVal: { fontSize: 26, fontWeight: 800, color: C.success },
+  totalLabel: { fontSize: 12, color: C.textSoft, lineHeight: 1.35 },
+  totalVal: { fontSize: 30, fontWeight: 600, color: C.success, lineHeight: 1.1 },
   modalActions: { display: 'flex', justifyContent: 'flex-end', gap: 10 },
   modalBtnCancel: {
     display: 'inline-flex', alignItems: 'center', gap: 6, padding: '10px 20px',
     background: C.cardDeep, color: C.textSoft, border: `1px solid rgba(90,202,249,0.20)`,
-    borderRadius: 10, fontWeight: 700, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit',
+    borderRadius: 10, fontWeight: 600, fontSize: 14, cursor: 'pointer', fontFamily: 'inherit',
   },
   modalBtnConfirm: (disabled) => ({
     display: 'inline-flex', alignItems: 'center', gap: 6, padding: '10px 24px',
     background: disabled ? 'rgba(9,131,200,0.35)' : 'var(--accent)',
-    color: '#fff', border: 'none', borderRadius: 10, fontWeight: 700, fontSize: 13,
+    color: '#fff', border: 'none', borderRadius: 10, fontWeight: 600, fontSize: 14,
     cursor: disabled ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: disabled ? 0.7 : 1,
   }),
   modalBtnPrint: {
     display: 'inline-flex', alignItems: 'center', gap: 6, padding: '10px 20px',
     background: 'rgba(63,185,80,0.12)', color: C.success,
     border: `1px solid rgba(63,185,80,0.3)`, borderRadius: 10,
-    fontWeight: 700, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit',
+    fontWeight: 600, fontSize: 14, cursor: 'pointer', fontFamily: 'inherit',
   },
 
   // ── Receipt / Confirm modal styles ──────────────────────────────────────
   receiptModal: {
     width: 'min(520px,100%)',
+    maxHeight: 'calc(100dvh - 48px)',
     background: '#0d1b2e',
     border: '1px solid rgba(56,189,248,0.18)',
     borderRadius: 20,
     overflow: 'hidden',
     boxShadow: '0 32px 64px rgba(0,0,0,0.55), 0 0 0 1px rgba(56,189,248,0.08)',
+    display: 'flex',
+    flexDirection: 'column',
   },
   receiptHeader: {
     background: 'linear-gradient(135deg, #0f172a 0%, #0c2a4a 60%, #0c3a5e 100%)',
@@ -425,23 +533,27 @@ const s = {
     fontSize: 20,
     boxShadow: '0 6px 16px rgba(56,189,248,0.3)',
   },
-  receiptBrandName: { fontSize: 16, fontWeight: 800, color: '#fff', letterSpacing: '-0.3px' },
-  receiptBrandSub: { fontSize: 10, color: '#7dd3fc', textTransform: 'uppercase', letterSpacing: '0.1em', marginTop: 2 },
+  receiptBrandName: { fontSize: 16, fontWeight: 600, color: '#fff', lineHeight: 1.2, letterSpacing: '-0.3px' },
+  receiptBrandSub: { fontSize: 12, color: '#7dd3fc', textTransform: 'uppercase', letterSpacing: '0.1em', lineHeight: 1.35, marginTop: 2 },
   receiptBadge: {
     background: 'rgba(56,189,248,0.15)',
     border: '1px solid rgba(56,189,248,0.3)',
     color: '#7dd3fc',
-    fontSize: 10, fontWeight: 700,
+    fontSize: 12, fontWeight: 600,
     letterSpacing: '0.1em', textTransform: 'uppercase',
     padding: '4px 12px', borderRadius: 20,
   },
-  receiptBody: { padding: '20px 24px' },
+  receiptBody: {
+    padding: '20px 24px 24px',
+    overflowY: 'auto',
+    flex: 1,
+  },
   receiptFacNum: {
     display: 'flex', justifyContent: 'space-between', alignItems: 'center',
     marginBottom: 16,
   },
-  receiptFacLabel: { fontSize: 11, color: 'rgba(148,163,184,0.8)', marginBottom: 3 },
-  receiptFacVal: { fontSize: 14, fontWeight: 700, color: '#fff' },
+  receiptFacLabel: { fontSize: 12, color: 'rgba(148,163,184,0.8)', lineHeight: 1.35, marginBottom: 3 },
+  receiptFacVal: { fontSize: 14, fontWeight: 600, color: '#fff', lineHeight: 1.35 },
   receiptVehicleBox: {
     background: 'rgba(9,131,200,0.1)',
     border: '1px solid rgba(9,131,200,0.25)',
@@ -457,8 +569,8 @@ const s = {
     display: 'flex', alignItems: 'center', justifyContent: 'center',
     color: '#38bdf8', fontSize: 24, flexShrink: 0,
   },
-  receiptPlaca: { fontSize: 20, fontWeight: 900, color: '#fff', letterSpacing: '0.05em', lineHeight: 1 },
-  receiptVehicleDetail: { fontSize: 12, color: 'rgba(148,163,184,0.8)', marginTop: 4 },
+  receiptPlaca: { fontSize: 16, fontWeight: 600, color: '#fff', letterSpacing: '0.03em', lineHeight: 1.2 },
+  receiptVehicleDetail: { fontSize: 14, color: 'rgba(148,163,184,0.8)', lineHeight: 1.55, marginTop: 4 },
   receiptDividerDashed: {
     borderTop: '1px dashed rgba(56,189,248,0.2)',
     margin: '16px 0',
@@ -471,15 +583,15 @@ const s = {
     background: 'rgba(255,255,255,0.03)',
     borderRadius: 8,
   },
-  receiptRowLabel: { fontSize: 12, color: 'rgba(148,163,184,0.8)', display: 'flex', alignItems: 'center', gap: 6 },
-  receiptRowVal: { fontSize: 12, fontWeight: 700, color: '#e2e8f0' },
+  receiptRowLabel: { fontSize: 12, color: 'rgba(148,163,184,0.8)', lineHeight: 1.35, display: 'flex', alignItems: 'center', gap: 6 },
+  receiptRowVal: { fontSize: 14, fontWeight: 600, color: '#e2e8f0', lineHeight: 1.35 },
   receiptTaxRows: { display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 12 },
   receiptTaxRow: {
     display: 'flex', justifyContent: 'space-between', alignItems: 'center',
     padding: '5px 0',
   },
-  receiptTaxLabel: { fontSize: 12, color: 'rgba(148,163,184,0.7)' },
-  receiptTaxVal: { fontSize: 12, fontWeight: 600, color: '#94a3b8' },
+  receiptTaxLabel: { fontSize: 12, color: 'rgba(148,163,184,0.7)', lineHeight: 1.35 },
+  receiptTaxVal: { fontSize: 14, fontWeight: 500, color: '#94a3b8', lineHeight: 1.35 },
   receiptTotalBox: {
     background: 'linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%)',
     borderRadius: 14,
@@ -488,17 +600,94 @@ const s = {
     marginBottom: 20,
     boxShadow: '0 8px 24px rgba(14,165,233,0.3)',
   },
-  receiptTotalLabel: { fontSize: 11, color: 'rgba(255,255,255,0.75)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4 },
-  receiptTotalAmt: { fontSize: 32, fontWeight: 900, color: '#fff', letterSpacing: '-0.5px' },
-  receiptTotalNote: { fontSize: 10, color: 'rgba(255,255,255,0.6)', marginTop: 2 },
-  receiptActions: { display: 'flex', gap: 10 },
+  receiptTotalLabel: { fontSize: 12, color: 'rgba(255,255,255,0.75)', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.08em', lineHeight: 1.35, marginBottom: 4 },
+  receiptTotalAmt: { fontSize: 30, fontWeight: 600, color: '#fff', lineHeight: 1.1, letterSpacing: '-0.5px' },
+  receiptTotalNote: { fontSize: 12, color: 'rgba(255,255,255,0.6)', lineHeight: 1.35, marginTop: 2 },
+  paymentMethodSection: {
+    marginBottom: 18,
+    display: 'grid',
+    gap: 12,
+  },
+  paymentMethodLabel: {
+    fontSize: 12,
+    color: '#7dd3fc',
+    textTransform: 'uppercase',
+    letterSpacing: '0.08em',
+    fontWeight: 600,
+  },
+  paymentMethodOptions: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+    gap: 10,
+  },
+  paymentMethodOption: (selected) => ({
+    display: 'flex',
+    alignItems: 'center',
+    gap: 10,
+    padding: '12px 14px',
+    borderRadius: 12,
+    border: selected ? '1px solid rgba(56,189,248,0.45)' : '1px solid rgba(255,255,255,0.08)',
+    background: selected ? 'rgba(14,165,233,0.14)' : 'rgba(255,255,255,0.03)',
+    color: '#e2e8f0',
+    cursor: 'pointer',
+  }),
+  paymentMethodRadio: {
+    accentColor: '#38bdf8',
+    margin: 0,
+  },
+  paymentMethodText: {
+    display: 'grid',
+    gap: 3,
+  },
+  paymentMethodTitle: {
+    fontSize: 14,
+    fontWeight: 600,
+    color: '#fff',
+  },
+  paymentMethodHint: {
+    fontSize: 12,
+    color: 'rgba(148,163,184,0.78)',
+    lineHeight: 1.35,
+  },
+  paymentReferenceField: {
+    display: 'grid',
+    gap: 6,
+  },
+  paymentReferenceInput: {
+    width: '100%',
+    borderRadius: 12,
+    border: '1px solid rgba(56,189,248,0.2)',
+    background: 'rgba(255,255,255,0.04)',
+    color: '#fff',
+    padding: '12px 14px',
+    fontSize: 14,
+    fontFamily: 'inherit',
+    outline: 'none',
+  },
+  paymentValidationError: {
+    fontSize: 14,
+    color: '#fda4af',
+    background: 'rgba(190,24,93,0.16)',
+    border: '1px solid rgba(244,63,94,0.28)',
+    borderRadius: 10,
+    padding: '10px 12px',
+  },
+  receiptActions: {
+    display: 'flex',
+    gap: 10,
+    position: 'sticky',
+    bottom: 0,
+    paddingTop: 14,
+    marginTop: 14,
+    background: 'linear-gradient(180deg, rgba(13,27,46,0), rgba(13,27,46,0.96) 18%, rgba(13,27,46,1) 100%)',
+  },
   receiptBtnCancel: {
     flex: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6,
     padding: '12px 0',
     background: 'rgba(255,255,255,0.05)',
     color: 'rgba(148,163,184,0.9)',
     border: '1px solid rgba(255,255,255,0.08)',
-    borderRadius: 12, fontWeight: 700, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit',
+    borderRadius: 12, fontWeight: 600, fontSize: 14, cursor: 'pointer', fontFamily: 'inherit',
     transition: 'background 0.2s',
   },
   receiptBtnPdf: (disabled) => ({
@@ -508,7 +697,7 @@ const s = {
       ? 'rgba(14,165,233,0.3)'
       : 'linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%)',
     color: '#fff', border: 'none',
-    borderRadius: 12, fontWeight: 800, fontSize: 14, cursor: disabled ? 'not-allowed' : 'pointer',
+    borderRadius: 12, fontWeight: 600, fontSize: 14, cursor: disabled ? 'not-allowed' : 'pointer',
     fontFamily: 'inherit',
     boxShadow: disabled ? 'none' : '0 8px 20px rgba(14,165,233,0.35)',
     opacity: disabled ? 0.65 : 1,
@@ -523,28 +712,40 @@ const Icon = ({ name, size = 16 }) => (
 )
 
 export default function Cobros() {
-  const [vehicles, setVehicles]     = useState([])
-  const [spaces, setSpaces]         = useState([])
-  const [hourlyRate, setHourlyRate] = useState(50)
-  const [loading, setLoading]       = useState(true)
+  const cachedVehicles = getCachedApiData('/api/vehiculos/activos')
+  const cachedSpaces = getCachedApiData('/api/parking-spaces')
+  const cachedSettings = getCachedApiData('/api/auth/settings')
+  const [vehicles, setVehicles]     = useState(() => (Array.isArray(cachedVehicles?.data) ? cachedVehicles.data : []))
+  const [spaces, setSpaces]         = useState(() => (Array.isArray(cachedSpaces?.data) ? cachedSpaces.data.map(normalizeSpace) : []))
+  const [hourlyRate, setHourlyRate] = useState(() => Number(cachedSettings?.data?.hourly_rate || 50) || 50)
+  const [loading, setLoading]       = useState(!cachedVehicles)
+  const [loadingSecondary, setLoadingSecondary] = useState(false)
   const [processing, setProcessing] = useState(false)
   const [error, setError]           = useState(null)
   const [successMessage, setSuccessMessage] = useState(null)
   const [selectedVehicle, setSelectedVehicle]   = useState(null)
   const [vehicleToConfirm, setVehicleToConfirm] = useState(null)
+  const [paymentMethod, setPaymentMethod] = useState('tarjeta')
+  const [cardData, setCardData] = useState(EMPTY_CARD)
+  const [transferData, setTransferData] = useState(EMPTY_TRANSFER)
+  const [cardSaved, setCardSaved] = useState(false)
+  const [paymentValidationError, setPaymentValidationError] = useState('')
+  const [page, setPage] = useState(1)
+  const [totalActiveVehicles, setTotalActiveVehicles] = useState(() =>
+    Array.isArray(cachedVehicles?.data) ? cachedVehicles.data.length : 0,
+  )
 
-  const load = async ({ showLoader = true } = {}) => {
+  const loadVehicles = async ({ showLoader = true, forceFresh = true, targetPage = page } = {}) => {
     if (showLoader) setLoading(true)
     setError(null)
     try {
-      const [vp, ep, sp] = await Promise.all([
-        apiGet('/api/vehiculos',      { forceFresh: true }),
-        apiGet('/api/parking-spaces', { forceFresh: true }),
-        apiGet('/api/auth/settings',  { forceFresh: true }).catch(() => ({ data: {} })),
-      ])
+      const vp = await apiGet(
+        buildPaginatedPath('/api/vehiculos/activos', { page: targetPage, pageSize: PAGE_SIZE }),
+        { forceFresh },
+      )
+      const pagination = getPaginationMeta(vp, PAGE_SIZE)
       setVehicles(Array.isArray(vp?.data) ? vp.data : [])
-      setSpaces(Array.isArray(ep?.data) ? ep.data.map(normalizeSpace) : [])
-      setHourlyRate(Number(sp?.data?.hourly_rate || 50) || 50)
+      setTotalActiveVehicles(pagination.total)
     } catch (err) {
       setError(err.message || 'No se pudieron cargar los cobros.')
     } finally {
@@ -552,15 +753,33 @@ export default function Cobros() {
     }
   }
 
+  const loadSecondary = async ({ forceFresh = true } = {}) => {
+    setLoadingSecondary(true)
+    try {
+      const [ep, sp] = await Promise.all([
+        apiGet('/api/parking-spaces', { forceFresh }).catch(() => ({ data: [] })),
+        apiGet('/api/auth/settings', { forceFresh }).catch(() => ({ data: {} })),
+      ])
+      setSpaces(Array.isArray(ep?.data) ? ep.data.map(normalizeSpace) : [])
+      setHourlyRate(Number(sp?.data?.hourly_rate || 50) || 50)
+    } finally {
+      setLoadingSecondary(false)
+    }
+  }
+
+  useDeferredLoader(
+    () => loadSecondary({ forceFresh: true }),
+    [],
+    { enabled: true, timeout: 180 },
+  )
+
   useEffect(() => {
     // Always fetch fresh — never use stale cache
-    load({ showLoader: true })
-
-    // Auto-refresh every 5s so new vehicles appear immediately
-    const intervalId = window.setInterval(() => load({ showLoader: false }), 5000)
+    loadVehicles({ showLoader: !cachedVehicles, targetPage: page }).catch(() => null)
+    const intervalId = window.setInterval(() => loadVehicles({ showLoader: false, forceFresh: true, targetPage: page }).catch(() => null), 20000)
 
     // Refresh when other modules dispatch events
-    const onRefresh = () => load({ showLoader: false })
+    const onRefresh = () => loadVehicles({ showLoader: false, forceFresh: true, targetPage: page }).catch(() => null)
     window.addEventListener('dashboard-refresh', onRefresh)
     window.addEventListener('smartpark:data-refresh', onRefresh)
 
@@ -569,7 +788,7 @@ export default function Cobros() {
       window.removeEventListener('dashboard-refresh', onRefresh)
       window.removeEventListener('smartpark:data-refresh', onRefresh)
     }
-  }, [])
+  }, [page])
 
   const spacesMap = useMemo(
     () => new Map(spaces.map((sp) => [String(sp.id), sp.codigo || String(sp.id).slice(0, 8)])),
@@ -578,7 +797,6 @@ export default function Cobros() {
 
   const activeVehicles = useMemo(() =>
     vehicles
-      .filter((v) => String(v.status || v.estado || '').toLowerCase() === 'dentro')
       .map((v) => ({
         ...v,
         espacioLabel:
@@ -588,22 +806,127 @@ export default function Cobros() {
     [spacesMap, vehicles],
   )
 
+  const visibleActiveVehicles = activeVehicles
+  const totalPages = Math.max(1, Math.ceil(Math.max(totalActiveVehicles, 0) / PAGE_SIZE))
+
   const invoicePreview = useMemo(() => {
     if (!selectedVehicle) return null
     return buildInvoiceData({ vehicle: selectedVehicle, exitTime: new Date(), hourlyRate })
   }, [hourlyRate, selectedVehicle])
 
+  const cardBrand = useMemo(() => detectCardBrand(cardData.number), [cardData.number])
+  const isCardValid = useMemo(() => {
+    const digits = String(cardData.number || '').replace(/\D/g, '')
+    return (
+      digits.length >= 15 &&
+      cardData.holder.trim().length > 2 &&
+      cardData.expiry.length === 5 &&
+      cardData.cvv.length >= 3
+    )
+  }, [cardData])
+  const isTransferValid = useMemo(() => {
+    return (
+      transferData.reference.trim().length > 2 &&
+      Boolean(transferData.date) &&
+      Boolean(transferData.receipt)
+    )
+  }, [transferData])
+  const activePaymentReference = useMemo(() => {
+    if (paymentMethod === 'tarjeta') return buildCardReference(cardData.number, vehicleToConfirm)
+    if (paymentMethod === 'transferencia') return transferData.reference.trim()
+    return ''
+  }, [cardData.number, paymentMethod, transferData.reference, vehicleToConfirm])
+  const isSubmitDisabled = paymentMethod === 'tarjeta' ? !isCardValid : !isTransferValid
+
   // Build a real-time invoice preview for the confirm modal
   const confirmInvoice = useMemo(() => {
     if (!vehicleToConfirm) return null
-    return buildInvoiceData({ vehicle: vehicleToConfirm, exitTime: new Date(), hourlyRate })
-  }, [vehicleToConfirm, hourlyRate])
+    return buildInvoiceData({
+      vehicle: vehicleToConfirm,
+      exitTime: new Date(),
+      hourlyRate,
+      paymentMethod,
+      paymentReference: activePaymentReference,
+    })
+  }, [vehicleToConfirm, hourlyRate, paymentMethod, activePaymentReference])
+
+  const handleCardChange = (field, value) => {
+    setCardData((current) => {
+      if (field === 'number') {
+        return { ...current, number: formatCardNumber(value) }
+      }
+      if (field === 'expiry') {
+        const digits = String(value || '').replace(/\D/g, '').slice(0, 4)
+        const formatted = digits.length <= 2 ? digits : `${digits.slice(0, 2)}/${digits.slice(2)}`
+        return { ...current, expiry: formatted }
+      }
+      if (field === 'cvv') {
+        return { ...current, cvv: String(value || '').replace(/\D/g, '').slice(0, 4) }
+      }
+      if (field === 'holder') {
+        return { ...current, holder: String(value || '').toUpperCase() }
+      }
+      return { ...current, [field]: value }
+    })
+  }
+
+  const handleTransferChange = (field, value) => {
+    setTransferData((current) => ({
+      ...current,
+      [field]: value,
+    }))
+  }
+
+  const resetConfirmModal = () => {
+    setVehicleToConfirm(null)
+    setPaymentMethod('tarjeta')
+    setCardData(EMPTY_CARD)
+    setTransferData(EMPTY_TRANSFER)
+    setCardSaved(false)
+    setPaymentValidationError('')
+  }
+
+  const closeConfirmModal = () => {
+    if (processing) return
+    resetConfirmModal()
+  }
+
+  const openConfirmModal = (vehicle) => {
+    setVehicleToConfirm(vehicle)
+    setPaymentMethod('tarjeta')
+    setCardData(EMPTY_CARD)
+    setTransferData(EMPTY_TRANSFER)
+    setCardSaved(false)
+    setPaymentValidationError('')
+  }
 
   const handleCheckout = async () => {
     if (!vehicleToConfirm) return
+    if (!paymentMethod) {
+      setPaymentValidationError('Selecciona un metodo de pago para continuar.')
+      return
+    }
+
+    const trimmedReference = activePaymentReference.trim()
+    if (paymentMethod === 'tarjeta' && !isCardValid) {
+      setPaymentValidationError('Completa todos los datos de la tarjeta.')
+      return
+    }
+    if (paymentMethod === 'transferencia' && !isTransferValid) {
+      setPaymentValidationError('Completa la referencia, la fecha y el comprobante de la transferencia.')
+      return
+    }
+
     setProcessing(true); setError(null)
+    setPaymentValidationError('')
     try {
-      const response = await apiPost('/api/vehiculos/salida', { placa: vehicleToConfirm.placa })
+      const response = await apiPost('/api/vehiculos/salida', {
+        placa: vehicleToConfirm.placa,
+        metodo: paymentMethod,
+        payment_method: paymentMethod,
+        referencia: trimmedReference,
+        payment_reference: trimmedReference,
+      })
       const data = response?.data || {}
       const exitTime = data.hora_salida || data.exit_time || new Date().toISOString()
 
@@ -611,6 +934,8 @@ export default function Cobros() {
         vehicle: vehicleToConfirm,
         exitTime: new Date(exitTime),
         hourlyRate,
+        paymentMethod,
+        paymentReference: trimmedReference,
       })
       const popup = window.open('', '_blank', 'width=980,height=900')
       if (popup) {
@@ -621,7 +946,7 @@ export default function Cobros() {
 
       // Cerrar modales INMEDIATAMENTE después del PDF (antes de cualquier otra cosa que pueda fallar)
       const vehiclePlate = vehicleToConfirm.placa
-      setVehicleToConfirm(null)
+      resetConfirmModal()
       if (selectedVehicle?.placa === vehiclePlate) setSelectedVehicle(null)
       setSuccessMessage('Factura generada exitosamente.')
       window.dispatchEvent(new CustomEvent('dashboard-refresh'))
@@ -687,6 +1012,15 @@ export default function Cobros() {
           background: rgba(255,255,255,0.08) !important;
           color: #fff !important;
         }
+        @media (max-width: 640px) {
+          .receipt-actions-stack {
+            flex-direction: column !important;
+          }
+          .receipt-actions-stack button {
+            width: 100% !important;
+            flex: none !important;
+          }
+        }
       `}</style>
 
       <div className="module-header">
@@ -704,9 +1038,9 @@ export default function Cobros() {
       {!loading && (
         <div style={s.statsBar}>
           {[
-            { label: 'Vehículos activos',  value: activeVehicles.length, icon: 'directions_car', accent: C.accent  },
+            { label: 'Vehículos activos',  value: totalActiveVehicles, icon: 'directions_car', accent: C.accent  },
             { label: 'Tarifa por hora',    value: formatCurrency(hourlyRate), icon: 'payments', accent: C.success },
-            { label: 'Pendientes de pago', value: activeVehicles.length, icon: 'receipt_long', accent: C.danger  },
+            { label: 'Pendientes de pago', value: totalActiveVehicles, icon: 'receipt_long', accent: C.danger  },
           ].map(({ label, value, icon, accent }) => (
             <div key={label} style={s.statCard(accent)}>
               <div style={s.statIco(accent)}><Icon name={icon} size={19} /></div>
@@ -721,13 +1055,18 @@ export default function Cobros() {
 
       {error && <div style={s.feedbackError}><Icon name="error" size={15} />{error}</div>}
       {successMessage && <div style={s.feedbackSuccess}><Icon name="check_circle" size={15} />{successMessage}</div>}
+      {loadingSecondary && !loading && (
+        <div style={{ marginBottom: 16, color: C.textSoft, fontSize: 12 }}>
+          Sincronizando espacios y configuracion de tarifa...
+        </div>
+      )}
 
       <div style={s.cardsGrid}>
         {loading && Array.from({ length: 3 }).map((_, i) => (
           <div key={i} style={{ ...s.skeleton, height: 220 }} />
         ))}
 
-        {!loading && activeVehicles.length === 0 && (
+        {!loading && totalActiveVehicles === 0 && (
           <div style={s.empty}>
             <div style={s.emptyIco}><Icon name="payments" size={26} /></div>
             <div style={{ fontWeight: 600, color: '#fff', marginBottom: 6 }}>No hay vehículos pendientes de cobro</div>
@@ -735,7 +1074,7 @@ export default function Cobros() {
           </div>
         )}
 
-        {!loading && activeVehicles.map((vehicle) => {
+        {!loading && visibleActiveVehicles.map((vehicle) => {
           const isSelected = selectedVehicle?.placa === vehicle.placa
           const since = formatSince(vehicle.hora_entrada || vehicle.entry_time)
           const liveCost = getLiveCost(vehicle)
@@ -764,7 +1103,7 @@ export default function Cobros() {
                 <button type="button" style={s.btnSecondary} onClick={(e) => { e.stopPropagation(); setSelectedVehicle(vehicle) }}>
                   <Icon name="receipt_long" size={14} />Factura
                 </button>
-                <button type="button" style={s.btnPrimary} onClick={(e) => { e.stopPropagation(); setVehicleToConfirm(vehicle) }}>
+                <button type="button" style={s.btnPrimary} onClick={(e) => { e.stopPropagation(); openConfirmModal(vehicle) }}>
                   <Icon name="logout" size={14} />Registrar Salida
                 </button>
               </div>
@@ -772,6 +1111,40 @@ export default function Cobros() {
           )
         })}
       </div>
+
+      {!loading && totalActiveVehicles > 0 && (
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          gap: 12,
+          flexWrap: 'wrap',
+          paddingTop: 14,
+          color: C.textSoft,
+          fontSize: 12,
+        }}>
+          <span>Mostrando {visibleActiveVehicles.length} de {totalActiveVehicles} cobros activos</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <button
+              type="button"
+              style={s.button('ghost', page === 1)}
+              disabled={page === 1}
+              onClick={() => setPage((current) => Math.max(1, current - 1))}
+            >
+              Anterior
+            </button>
+            <span>Página {page} de {totalPages}</span>
+            <button
+              type="button"
+              style={s.button('ghost', page >= totalPages)}
+              disabled={page >= totalPages}
+              onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+            >
+              Siguiente
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ── Invoice preview modal (unchanged) ── */}
       {selectedVehicle && invoicePreview && (
@@ -806,7 +1179,7 @@ export default function Cobros() {
                 <Icon name="picture_as_pdf" size={15} />Generar PDF
               </button>
               <button type="button" style={s.modalBtnCancel} onClick={() => setSelectedVehicle(null)}>Cerrar</button>
-              <button type="button" style={s.modalBtnConfirm(false)} onClick={() => { setSelectedVehicle(null); setVehicleToConfirm(selectedVehicle) }}>
+              <button type="button" style={s.modalBtnConfirm(false)} onClick={() => { setSelectedVehicle(null); openConfirmModal(selectedVehicle) }}>
                 <Icon name="logout" size={15} />Registrar Salida
               </button>
             </div>
@@ -816,7 +1189,7 @@ export default function Cobros() {
 
       {/* ── NUEVO: Receipt-style Confirm modal ── */}
       {vehicleToConfirm && confirmInvoice && (
-        <div style={s.backdrop} onClick={() => !processing && setVehicleToConfirm(null)}>
+        <div style={s.backdrop} onClick={closeConfirmModal}>
           <div
             className="receipt-modal-enter"
             style={s.receiptModal}
@@ -836,7 +1209,7 @@ export default function Cobros() {
                 <button
                   type="button"
                   style={{ ...s.closeBtn, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}
-                  onClick={() => !processing && setVehicleToConfirm(null)}
+                  onClick={closeConfirmModal}
                 >
                   <Icon name="close" size={18} />
                 </button>
@@ -874,8 +1247,8 @@ export default function Cobros() {
                   border: '1px solid rgba(56,189,248,0.3)',
                   borderRadius: 8, padding: '6px 12px', textAlign: 'center',
                 }}>
-                  <div style={{ fontSize: 10, color: '#7dd3fc', fontWeight: 700, marginBottom: 2 }}>ESPACIO</div>
-                  <div style={{ fontSize: 16, fontWeight: 900, color: '#38bdf8' }}>{vehicleToConfirm.espacioLabel}</div>
+                  <div style={{ fontSize: 12, color: '#7dd3fc', fontWeight: 500, lineHeight: 1.35, marginBottom: 2 }}>ESPACIO</div>
+                  <div style={{ fontSize: 16, fontWeight: 600, lineHeight: 1.2, color: '#38bdf8' }}>{vehicleToConfirm.espacioLabel}</div>
                 </div>
               </div>
 
@@ -931,27 +1304,239 @@ export default function Cobros() {
                 </div>
               </div>
 
-              {/* Actions */}
-              <div style={s.receiptActions}>
-                <button
-                  type="button"
-                  className="receipt-btn-cancel"
-                  style={s.receiptBtnCancel}
-                  disabled={processing}
-                  onClick={() => setVehicleToConfirm(null)}
+              <div
+                className={paymentUi.layout}
+                style={{
+                  padding: 0,
+                  marginTop: 18,
+                  gridTemplateColumns: '1fr',
+                  gap: 16,
+                }}
+              >
+                <aside
+                  className={paymentUi.methods}
+                  style={{
+                    gridTemplateColumns: '1fr',
+                  }}
                 >
-                  Cancelar
-                </button>
-                <button
-                  type="button"
-                  className="receipt-btn-pdf"
-                  style={s.receiptBtnPdf(processing)}
-                  disabled={processing}
-                  onClick={handleCheckout}
+                  <button
+                    type="button"
+                    className={`${paymentUi.methodButton} ${paymentMethod === 'tarjeta' ? paymentUi.methodButtonActive : ''}`}
+                    onClick={() => {
+                      setPaymentMethod('tarjeta')
+                      setPaymentValidationError('')
+                    }}
+                    disabled={processing}
+                  >
+                    <span className={paymentUi.methodTitle}>Tarjeta</span>
+                    <span className={paymentUi.methodDescription}>Pago inmediato con tarjeta de credito o debito.</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    className={`${paymentUi.methodButton} ${paymentMethod === 'transferencia' ? paymentUi.methodButtonActive : ''}`}
+                    onClick={() => {
+                      setPaymentMethod('transferencia')
+                      setPaymentValidationError('')
+                    }}
+                    disabled={processing}
+                  >
+                    <span className={paymentUi.methodTitle}>Transferencia</span>
+                    <span className={paymentUi.methodDescription}>Adjunta referencia y comprobante del deposito.</span>
+                  </button>
+                </aside>
+
+                <form
+                  className={paymentUi.formPanel}
+                  onSubmit={(event) => {
+                    event.preventDefault()
+                    handleCheckout()
+                  }}
                 >
-                  <Icon name={processing ? 'hourglass_top' : 'picture_as_pdf'} size={18} />
-                  {processing ? 'Procesando...' : 'Confirmar y generar PDF'}
-                </button>
+                  <div className={paymentUi.panels}>
+                    <section className={`${paymentUi.panel} ${paymentMethod === 'tarjeta' ? paymentUi.panelActive : paymentUi.panelHidden}`}>
+                      <CreditCardPreview
+                        cardData={cardData}
+                        brand={cardBrand}
+                        style={{
+                          width: '100%',
+                          maxWidth: '100%',
+                          transform: 'none',
+                        }}
+                      />
+
+                      <div className={paymentUi.fieldGrid}>
+                        <label className={paymentUi.field}>
+                          <span className={paymentUi.fieldLabel}>Numero de tarjeta</span>
+                          <input
+                            className={paymentUi.input}
+                            type="text"
+                            inputMode="numeric"
+                            placeholder="1234 5678 9012 3456"
+                            value={cardData.number}
+                            onChange={(event) => {
+                              handleCardChange('number', event.target.value)
+                              setPaymentValidationError('')
+                            }}
+                            disabled={processing}
+                          />
+                        </label>
+
+                        <label className={paymentUi.field}>
+                          <span className={paymentUi.fieldLabel}>Titular</span>
+                          <input
+                            className={paymentUi.input}
+                            type="text"
+                            placeholder="NOMBRE DEL TITULAR"
+                            value={cardData.holder}
+                            onChange={(event) => {
+                              handleCardChange('holder', event.target.value)
+                              setPaymentValidationError('')
+                            }}
+                            disabled={processing}
+                          />
+                        </label>
+
+                        <div
+                          className={paymentUi.row}
+                          style={{
+                            gridTemplateColumns: 'minmax(0, 3fr) minmax(0, 2fr)',
+                          }}
+                        >
+                          <label className={paymentUi.field}>
+                            <span className={paymentUi.fieldLabel}>Expiracion</span>
+                            <input
+                              className={paymentUi.input}
+                              type="text"
+                              inputMode="numeric"
+                              placeholder="MM/AA"
+                              value={cardData.expiry}
+                              onChange={(event) => {
+                                handleCardChange('expiry', event.target.value)
+                                setPaymentValidationError('')
+                              }}
+                              disabled={processing}
+                            />
+                          </label>
+
+                          <label className={paymentUi.field}>
+                            <span className={paymentUi.fieldLabel}>CVV</span>
+                            <input
+                              className={paymentUi.input}
+                              type="password"
+                              inputMode="numeric"
+                              placeholder="123"
+                              value={cardData.cvv}
+                              onChange={(event) => {
+                                handleCardChange('cvv', event.target.value)
+                                setPaymentValidationError('')
+                              }}
+                              disabled={processing}
+                            />
+                          </label>
+                        </div>
+
+                        <label className={paymentUi.checkbox}>
+                          <input
+                            type="checkbox"
+                            checked={cardSaved}
+                            onChange={(event) => setCardSaved(event.target.checked)}
+                            disabled={processing}
+                          />
+                          <span>Guardar para futuros pagos</span>
+                        </label>
+                      </div>
+                    </section>
+
+                    <section className={`${paymentUi.panel} ${paymentMethod === 'transferencia' ? paymentUi.panelActive : paymentUi.panelHidden}`}>
+                      <div className={paymentUi.bankCard}>
+                        <div className={paymentUi.bankRow}><span>Banco</span><strong>Banco Popular Dominicano</strong></div>
+                        <div className={paymentUi.bankRow}><span>Cuenta</span><strong>001-987654321</strong></div>
+                        <div className={paymentUi.bankRow}><span>Titular</span><strong>SmartPark Control Total SRL</strong></div>
+                        <div className={paymentUi.bankRow}><span>Monto</span><strong>{confirmInvoice?.total || '--'}</strong></div>
+                      </div>
+
+                      <div className={paymentUi.fieldGrid}>
+                        <label className={paymentUi.field}>
+                          <span className={paymentUi.fieldLabel}>Referencia de transferencia</span>
+                          <input
+                            className={paymentUi.input}
+                            type="text"
+                            placeholder="REF-123456"
+                            value={transferData.reference}
+                            onChange={(event) => {
+                              handleTransferChange('reference', event.target.value)
+                              setPaymentValidationError('')
+                            }}
+                            disabled={processing}
+                          />
+                        </label>
+
+                        <label className={paymentUi.field}>
+                          <span className={paymentUi.fieldLabel}>Fecha de transferencia</span>
+                          <input
+                            className={paymentUi.input}
+                            type="date"
+                            value={transferData.date}
+                            onChange={(event) => {
+                              handleTransferChange('date', event.target.value)
+                              setPaymentValidationError('')
+                            }}
+                            disabled={processing}
+                          />
+                        </label>
+
+                        <label className={paymentUi.field}>
+                          <span className={paymentUi.fieldLabel}>Comprobante</span>
+                          <label className={paymentUi.uploadBox}>
+                            <span className="material-symbols-outlined">upload</span>
+                            <span>{transferData.receipt?.name || 'Subir imagen del comprobante'}</span>
+                            <input
+                              className={paymentUi.hiddenInput}
+                              type="file"
+                              accept="image/*,.pdf"
+                              onChange={(event) => {
+                                handleTransferChange('receipt', event.target.files?.[0] || null)
+                                setPaymentValidationError('')
+                              }}
+                              disabled={processing}
+                            />
+                          </label>
+                        </label>
+                      </div>
+                    </section>
+                  </div>
+
+                  {paymentValidationError && <div style={{ ...s.paymentValidationError, marginTop: 14 }}>{paymentValidationError}</div>}
+
+                  <div
+                    className={paymentUi.footer}
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: '1fr',
+                      gap: 12,
+                      alignItems: 'stretch',
+                    }}
+                  >
+                    <button
+                      type="button"
+                      className={paymentUi.cancelButton}
+                      onClick={closeConfirmModal}
+                      disabled={processing}
+                      style={{ width: '100%' }}
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="submit"
+                      className={paymentUi.payButton}
+                      disabled={processing || isSubmitDisabled}
+                      style={{ width: '100%' }}
+                    >
+                      {processing ? 'Procesando...' : `Pagar ${confirmInvoice.total}`}
+                    </button>
+                  </div>
+                </form>
               </div>
 
             </div>

@@ -184,10 +184,6 @@ export default function Reservations() {
           <h1 style={styles.title}>Reservas</h1>
           <p style={styles.subtitle}>Programa espacios con hasta 48 horas de anticipacion, valida disponibilidad y convierte la reserva en entrada cuando llega el vehiculo.</p>
         </div>
-        <div style={styles.badge}>
-          <span className="material-symbols-outlined" style={{ fontSize: 16 }}>event_available</span>
-          RF17 - Reservas
-        </div>
       </header>
 
       {error && <div style={styles.feedbackError}>{error}</div>}

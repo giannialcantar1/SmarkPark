@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { apiGet, getCachedApiData } from '../lib/api'
 import { downloadCsv } from '../lib/exportCsv'
@@ -37,6 +37,33 @@ const formatCompactCurrency = (value) =>
     notation: 'compact',
     maximumFractionDigits: 1,
   }).format(Number(value || 0))
+
+const formatChartCurrency = (value) =>
+  new Intl.NumberFormat('es-DO', {
+    style: 'currency',
+    currency: 'DOP',
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(Number(value || 0))
+
+const formatAxisValue = (value) =>
+  new Intl.NumberFormat('es-DO', {
+    maximumFractionDigits: 0,
+  }).format(Number(value || 0))
+
+const getChartStep = (maxValue) => {
+  const safeMax = Number(maxValue) || 0
+  if (safeMax <= 0) return 1000
+
+  const roughStep = safeMax / 4
+  const magnitude = 10 ** Math.floor(Math.log10(roughStep))
+  const normalized = roughStep / magnitude
+
+  if (normalized <= 1) return magnitude
+  if (normalized <= 2) return magnitude * 2
+  if (normalized <= 5) return magnitude * 5
+  return magnitude * 10
+}
 
 const parseDate = (value) => {
   if (!value) return null
@@ -353,8 +380,10 @@ const addPdfTable = (doc, { title, columns, rows, startY, marginX = 40 }) => {
 const styles = {
   page: {
     width: '100%',
-    maxWidth: 1440,
+    maxWidth: 1720,
     margin: '0 auto',
+    paddingInline: 12,
+    boxSizing: 'border-box',
     color: PAGE.text,
     fontFamily: "'DM Sans', system-ui, sans-serif",
   },
@@ -369,15 +398,16 @@ const styles = {
   title: {
     margin: 0,
     fontFamily: "'Syne', sans-serif",
-    fontSize: 'clamp(1.9rem, 3vw, 2.4rem)',
-    lineHeight: 1,
+    fontSize: 'var(--font-size-h1)',
+    lineHeight: 1.2,
+    fontWeight: 600,
     letterSpacing: '-0.04em',
     background: 'linear-gradient(135deg, #e2e8f0 30%, var(--accent) 100%)',
     WebkitBackgroundClip: 'text',
     backgroundClip: 'text',
     color: 'transparent',
   },
-  subtitle: { margin: '10px 0 0', color: PAGE.dim, fontSize: '1rem' },
+  subtitle: { margin: '10px 0 0', color: PAGE.dim, fontSize: 14, lineHeight: 1.55 },
   controls: { display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'flex-end' },
   pillGroup: {
     display: 'flex',
@@ -410,13 +440,13 @@ const styles = {
         : active
           ? '#08101e'
           : PAGE.text,
-    fontWeight: 700,
+    fontWeight: 600,
     cursor: 'pointer',
     fontFamily: 'inherit',
   }),
   metrics: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
     gap: 16,
     marginBottom: 20,
   },
@@ -426,24 +456,29 @@ const styles = {
     borderRadius: 20,
     padding: 22,
     boxShadow: '0 18px 32px rgba(2, 8, 23, 0.22)',
+    minWidth: 0,
+    overflow: 'hidden',
   },
   cardLabel: {
-    fontSize: 11,
+    fontSize: 12,
     letterSpacing: '0.12em',
     textTransform: 'uppercase',
     color: PAGE.dim,
     marginBottom: 12,
-    fontWeight: 700,
+    fontWeight: 500,
   },
   cardValue: (color = PAGE.text) => ({
     fontFamily: "'Syne', sans-serif",
-    fontSize: 'clamp(1.45rem, 2.4vw, 2rem)',
-    fontWeight: 800,
+    fontSize: 30,
+    fontWeight: 600,
     letterSpacing: '-0.03em',
-    lineHeight: 1,
+    lineHeight: 1.1,
     color,
+    overflowWrap: 'anywhere',
+    wordBreak: 'break-word',
+    maxWidth: '100%',
   }),
-  cardSub: { marginTop: 10, color: PAGE.dim, fontSize: 13, lineHeight: 1.5 },
+  cardSub: { marginTop: 10, color: PAGE.dim, fontSize: 14, lineHeight: 1.55 },
   progressTrack: {
     height: 6,
     borderRadius: 999,
@@ -460,14 +495,21 @@ const styles = {
   }),
   contentGrid: {
     display: 'grid',
-    gridTemplateColumns: 'minmax(0, 1.15fr) minmax(320px, 0.85fr)',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(520px, 1fr))',
     gap: 18,
+    alignItems: 'start',
   },
   tableCard: {
     background: PAGE.card,
     border: `1px solid ${PAGE.border}`,
     borderRadius: 20,
     overflow: 'hidden',
+    minWidth: 0,
+  },
+  tableScroll: {
+    overflowX: 'auto',
+    overflowY: 'hidden',
+    WebkitOverflowScrolling: 'touch',
   },
   sectionHead: {
     padding: '20px 24px 12px',
@@ -479,33 +521,36 @@ const styles = {
   sectionTitle: {
     margin: 0,
     fontFamily: "'Syne', sans-serif",
-    fontSize: 20,
-    fontWeight: 700,
+    fontSize: 'var(--font-size-h2)',
+    fontWeight: 600,
     letterSpacing: '-0.03em',
   },
-  sectionSub: { margin: '6px 0 0', color: PAGE.dim, fontSize: 14 },
+  sectionSub: { margin: '6px 0 0', color: PAGE.dim, fontSize: 14, lineHeight: 1.55 },
   tableHead: {
     display: 'grid',
-    gridTemplateColumns: '1fr 0.8fr 0.9fr 1.1fr 0.8fr 1fr',
+    gridTemplateColumns: 'minmax(150px, 1.2fr) minmax(90px, 0.7fr) minmax(110px, 0.8fr) minmax(180px, 1.2fr) minmax(110px, 0.85fr) minmax(140px, 0.95fr)',
     gap: 12,
     padding: '14px 24px',
     borderTop: `1px solid rgba(99,179,237,0.06)`,
     borderBottom: `1px solid rgba(99,179,237,0.06)`,
     background: 'rgba(56,189,248,0.04)',
     color: PAGE.dim,
-    fontSize: 11,
+    fontSize: 12,
     textTransform: 'uppercase',
     letterSpacing: '0.1em',
-    fontWeight: 700,
+    fontWeight: 500,
+    minWidth: 860,
   },
   row: {
     display: 'grid',
-    gridTemplateColumns: '1fr 0.8fr 0.9fr 1.1fr 0.8fr 1fr',
+    gridTemplateColumns: 'minmax(150px, 1.2fr) minmax(90px, 0.7fr) minmax(110px, 0.8fr) minmax(180px, 1.2fr) minmax(110px, 0.85fr) minmax(140px, 0.95fr)',
     gap: 12,
     padding: '16px 24px',
     alignItems: 'center',
     borderBottom: '1px solid rgba(99,179,237,0.06)',
     fontSize: 14,
+    lineHeight: 1.55,
+    minWidth: 860,
   },
   rowDim: { color: PAGE.dim },
   badgeFloor: {
@@ -517,7 +562,7 @@ const styles = {
     padding: '4px 8px',
     background: 'rgba(129,140,248,0.12)',
     color: PAGE.accent2,
-    fontWeight: 700,
+    fontWeight: 600,
   },
   empty: { padding: 32, textAlign: 'center', color: PAGE.dim },
   chartCard: {
@@ -525,6 +570,33 @@ const styles = {
     border: `1px solid ${PAGE.border}`,
     borderRadius: 20,
     padding: 22,
+  },
+  chartShell: {
+    minHeight: 390,
+    marginTop: 20,
+    padding: 18,
+    borderRadius: 24,
+    border: `1px solid ${PAGE.border}`,
+    background:
+      'radial-gradient(circle at top, rgba(56,189,248,0.08), transparent 50%), linear-gradient(180deg, rgba(12,20,34,0.98), rgba(9,16,28,0.98))',
+  },
+  chartCanvasWrap: {
+    position: 'relative',
+    minHeight: 340,
+  },
+  chartCanvas: {
+    display: 'block',
+    width: '100%',
+    height: 340,
+  },
+  chartMeta: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    gap: 16,
+    marginTop: 12,
+    color: 'rgba(173,188,214,0.78)',
+    fontSize: 12,
+    fontWeight: 500,
   },
   chartBars: (count) => ({
     display: 'grid',
@@ -547,18 +619,18 @@ const styles = {
     boxShadow: active ? '0 14px 28px rgba(56,189,248,0.2)' : 'none',
     transition: 'height 0.8s cubic-bezier(0.34,1.56,0.64,1)',
   }),
-  chartLabel: { color: PAGE.dim, fontSize: 12, fontWeight: 600 },
+  chartLabel: { color: PAGE.dim, fontSize: 12, fontWeight: 500 },
   chartAmount: {
     fontFamily: "'Syne', sans-serif",
-    fontSize: 13,
+    fontSize: 14,
     color: PAGE.success,
-    fontWeight: 700,
+    fontWeight: 600,
     letterSpacing: '-0.03em',
   },
   sideStack: { display: 'grid', gap: 18 },
   floorGrid: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
     gap: 12,
     marginTop: 18,
   },
@@ -570,11 +642,11 @@ const styles = {
   },
   floorName: {
     fontFamily: "'Syne', sans-serif",
-    fontWeight: 700,
-    fontSize: 20,
+    fontWeight: 600,
+    fontSize: 'var(--font-size-h3)',
     margin: 0,
   },
-  floorMeta: { marginTop: 8, fontSize: 13, color: PAGE.dim },
+  floorMeta: { marginTop: 8, fontSize: 14, color: PAGE.dim, lineHeight: 1.55 },
   feedbackError: {
     borderRadius: 14,
     padding: '12px 16px',
@@ -582,7 +654,7 @@ const styles = {
     background: 'rgba(248,113,113,0.14)',
     border: '1px solid rgba(248,113,113,0.25)',
     color: '#fecaca',
-    fontWeight: 600,
+    fontWeight: 500,
   },
   exportButton: (disabled, tone = 'csv') => {
     const tones = {
@@ -610,7 +682,7 @@ const styles = {
       border: `1px solid ${disabled ? 'rgba(148,163,184,0.18)' : palette.border}`,
       background: disabled ? 'rgba(15,23,42,0.52)' : palette.background,
       color: disabled ? 'rgba(148,163,184,0.75)' : palette.color,
-      fontWeight: 700,
+      fontWeight: 600,
       cursor: disabled ? 'not-allowed' : 'pointer',
       fontFamily: 'inherit',
     }
@@ -621,6 +693,8 @@ export default function Reports() {
   const cachedVehiculos = getCachedApiData('/api/vehiculos')
   const cachedSpaces = getCachedApiData('/api/parking-spaces')
   const hasCache = Boolean(cachedVehiculos && cachedSpaces)
+  const incomeChartCanvasRef = useRef(null)
+  const incomeChartInstanceRef = useRef(null)
 
   const [vehiculos, setVehiculos] = useState(() => cachedVehiculos?.data || [])
   const [parqueos, setParqueos] = useState(() => cachedSpaces?.data || [])
@@ -726,6 +800,170 @@ export default function Reports() {
   }, [filteredRows])
 
   const chartData = useMemo(() => buildDailyTotals(filteredRows, period), [filteredRows, period])
+  const chartMax = useMemo(
+    () => chartData.reduce((maxValue, item) => Math.max(maxValue, Number(item.value) || 0), 0),
+    [chartData],
+  )
+
+  useEffect(() => {
+    let isCancelled = false
+
+    const renderIncomeChart = async () => {
+      const canvas = incomeChartCanvasRef.current
+      if (!canvas) return
+
+      const chartModule = await import('chart.js/auto')
+      if (isCancelled) return
+
+      const Chart = chartModule.default || chartModule.Chart
+      if (!Chart) return
+
+      incomeChartInstanceRef.current?.destroy()
+
+      const stepSize = getChartStep(chartMax)
+      const suggestedMax = chartMax
+        ? Math.max(stepSize * 4, Math.ceil(chartMax / stepSize) * stepSize)
+        : stepSize * 4
+
+      const valueLabelPlugin = {
+        id: 'smartparkReportsIncomeLabels',
+        afterDatasetsDraw(chart) {
+          const { ctx, scales } = chart
+          const meta = chart.getDatasetMeta(0)
+          const baselineY = scales.y.getPixelForValue(0)
+
+          ctx.save()
+          ctx.textAlign = 'center'
+          ctx.textBaseline = 'bottom'
+
+          meta.data.forEach((bar, index) => {
+            const item = chartData[index]
+            if (!item) return
+
+            ctx.fillStyle = item.value > 0 ? '#f8fafc' : 'rgba(173,188,214,0.88)'
+            ctx.font = `600 ${item.value > 0 ? 12 : 11}px Inter, Segoe UI, sans-serif`
+            ctx.fillText(
+              formatChartCurrency(item.value),
+              bar.x,
+              item.value > 0 ? bar.y - 10 : baselineY - 10,
+            )
+          })
+
+          ctx.restore()
+        },
+      }
+
+      incomeChartInstanceRef.current = new Chart(canvas, {
+        type: 'bar',
+        data: {
+          labels: chartData.map((item) => item.label),
+          datasets: [
+            {
+              label: 'Ingresos DOP',
+              data: chartData.map((item) => item.value),
+              backgroundColor: chartData.map((item, index) =>
+                index === chartData.length - 1 ? 'rgba(34, 211, 238, 0.96)' : 'rgba(56, 189, 248, 0.82)',
+              ),
+              borderColor: chartData.map((item, index) =>
+                index === chartData.length - 1 ? 'rgba(125, 240, 255, 1)' : 'rgba(129, 140, 248, 0.95)',
+              ),
+              borderWidth: 1,
+              borderRadius: 16,
+              borderSkipped: false,
+              barThickness: period === 'hoy' ? 40 : 34,
+              maxBarThickness: 48,
+              categoryPercentage: 0.72,
+              barPercentage: 0.9,
+            },
+          ],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          animation: {
+            duration: 500,
+          },
+          layout: {
+            padding: {
+              top: 28,
+              right: 12,
+              left: 8,
+              bottom: 0,
+            },
+          },
+          plugins: {
+            legend: {
+              display: false,
+            },
+            tooltip: {
+              displayColors: false,
+              backgroundColor: 'rgba(5, 16, 25, 0.96)',
+              borderColor: 'rgba(90, 202, 249, 0.24)',
+              borderWidth: 1,
+              titleColor: '#e2e8f0',
+              bodyColor: '#f8fafc',
+              padding: 12,
+              callbacks: {
+                label(context) {
+                  return `Ingreso: ${formatCurrency(context.parsed.y)}`
+                },
+              },
+            },
+          },
+          scales: {
+            x: {
+              grid: {
+                display: false,
+              },
+              border: {
+                display: false,
+              },
+              ticks: {
+                color: '#e2e8f0',
+                font: {
+                  size: 13,
+                  weight: '600',
+                },
+                padding: 10,
+              },
+            },
+            y: {
+              beginAtZero: true,
+              suggestedMax,
+              ticks: {
+                stepSize,
+                color: 'rgba(173,188,214,0.9)',
+                padding: 12,
+                font: {
+                  size: 12,
+                  weight: '600',
+                },
+                callback(value) {
+                  return formatAxisValue(value)
+                },
+              },
+              grid: {
+                color: 'rgba(148,163,184,0.14)',
+                drawTicks: false,
+              },
+              border: {
+                display: false,
+              },
+            },
+          },
+        },
+        plugins: [valueLabelPlugin],
+      })
+    }
+
+    renderIncomeChart().catch(() => null)
+
+    return () => {
+      isCancelled = true
+      incomeChartInstanceRef.current?.destroy()
+      incomeChartInstanceRef.current = null
+    }
+  }, [chartData, chartMax, period])
 
   const occupancyByFloor = useMemo(() => {
     const scopedFloors = floor === 'todos'
@@ -1109,37 +1347,39 @@ export default function Reports() {
             </div>
           </div>
 
-          <div style={styles.tableHead}>
-            <span>Fecha</span>
-            <span>Piso</span>
-            <span>Placa</span>
-            <span>Propietario</span>
-            <span>Duración</span>
-            <span>Monto</span>
-          </div>
+          <div style={styles.tableScroll}>
+            <div style={styles.tableHead}>
+              <span>Fecha</span>
+              <span>Piso</span>
+              <span>Placa</span>
+              <span>Propietario</span>
+              <span>Duración</span>
+              <span>Monto</span>
+            </div>
 
-          {loading ? (
-            <div style={styles.empty}>Cargando Reports...</div>
-          ) : filteredRows.length === 0 ? (
-            <div style={styles.empty}>No hay registros para el filtro seleccionado.</div>
-          ) : (
-            filteredRows.slice(0, 8).map((row) => (
-              <div key={row.id} style={styles.row}>
-                <span style={styles.rowDim}>
-                  {formatDate(row.exit || row.entry)} - {formatTime(row.exit || row.entry)}
-                </span>
-                <span><span style={styles.badgeFloor}>{row.piso}</span></span>
-                <strong style={{ fontFamily: "'Syne', sans-serif", color: PAGE.accent }}>{row.placa}</strong>
-                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {row.propietario}
-                </span>
-                <span style={styles.rowDim}>{formatDuration(row.entry, row.exit)}</span>
-                <strong style={{ fontFamily: "'Syne', sans-serif", color: PAGE.success, letterSpacing: '-0.03em' }}>
-                  {formatCurrency(row.amount)}
-                </strong>
-              </div>
-            ))
-          )}
+            {loading ? (
+              <div style={styles.empty}>Cargando Reports...</div>
+            ) : filteredRows.length === 0 ? (
+              <div style={styles.empty}>No hay registros para el filtro seleccionado.</div>
+            ) : (
+              filteredRows.slice(0, 8).map((row) => (
+                <div key={row.id} style={styles.row}>
+                  <span style={styles.rowDim}>
+                    {formatDate(row.exit || row.entry)} - {formatTime(row.exit || row.entry)}
+                  </span>
+                  <span><span style={styles.badgeFloor}>{row.piso}</span></span>
+                  <strong style={{ fontFamily: "'Syne', sans-serif", color: PAGE.accent, overflowWrap: 'anywhere' }}>{row.placa}</strong>
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {row.propietario}
+                  </span>
+                  <span style={styles.rowDim}>{formatDuration(row.entry, row.exit)}</span>
+                  <strong style={{ fontFamily: "'Syne', sans-serif", color: PAGE.success, letterSpacing: '-0.03em', overflowWrap: 'anywhere' }}>
+                    {formatCurrency(row.amount)}
+                  </strong>
+                </div>
+              ))
+            )}
+          </div>
         </div>
 
         <div style={styles.sideStack}>
@@ -1150,14 +1390,14 @@ export default function Reports() {
                 <p style={styles.sectionSub}>Distribución de montos en {period}.</p>
               </div>
             </div>
-            <div style={styles.chartBars(chartData.length)}>
-              {chartData.map((item, index) => (
-                <div key={item.label} style={styles.chartBarWrap}>
-                  <span style={styles.chartAmount}>{item.value > 0 ? formatCompactCurrency(item.value) : 'RD$0'}</span>
-                  <div style={styles.chartBar(barsAnimated ? item.height : 10, index === chartData.length - 1)} />
-                  <span style={styles.chartLabel}>{item.label}</span>
-                </div>
-              ))}
+            <div style={styles.chartShell}>
+              <div style={styles.chartCanvasWrap}>
+                <canvas ref={incomeChartCanvasRef} style={styles.chartCanvas} aria-label="Ingresos por período" role="img" />
+              </div>
+              <div style={styles.chartMeta}>
+                <span>Escala automática según los montos visibles del período.</span>
+                <span style={{ color: '#f8fafc', fontWeight: 600 }}>Máximo actual: {formatChartCurrency(chartMax)}</span>
+              </div>
             </div>
           </div>
 

@@ -1,9 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 
-import { useAuth } from '../hooks/useAuth'
 import { getDefaultRouteForRole } from '../lib/roles'
+import { clearStoredAuth, getStoredUser, register as registerRequest } from '../services/api'
 import './auth.css'
+
+const RegisterMapModal = lazy(() => import('../components/RegisterMapModal'))
 
 function getRegisterErrorMessage(error) {
   const rawMessage = error instanceof Error ? error.message : String(error || '')
@@ -32,7 +34,6 @@ function getInvitationCode(payload) {
 export default function Register() {
   const navigate = useNavigate()
   const location = useLocation()
-  const { user, loading, logout, register } = useAuth()
   const [form, setForm] = useState({
     full_name: '',
     email: '',
@@ -48,8 +49,10 @@ export default function Register() {
   const [error, setError] = useState(null)
   const [hint, setHint] = useState(null)
   const [submitting, setSubmitting] = useState(false)
+  const [decorReady, setDecorReady] = useState(false)
   const [invitationModal, setInvitationModal] = useState({ open: false, code: '', email: '' })
   const [copiedInvitationCode, setCopiedInvitationCode] = useState(false)
+  const [isMapOpen, setIsMapOpen] = useState(false)
   const panelRef = useRef(null)
   const copyResetRef = useRef(null)
   const forceAccess = new URLSearchParams(location.search).get('force') === '1'
@@ -69,6 +72,11 @@ export default function Register() {
     if (!form.email) return null
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)
   }, [form.email])
+
+  const companyPhoneValid = useMemo(() => {
+    if (!form.company_phone) return null
+    return /^[0-9]{10}$/.test(form.company_phone)
+  }, [form.company_phone])
 
   const handleSubmit = async (event) => {
     event.preventDefault()
@@ -93,9 +101,15 @@ export default function Register() {
       return
     }
 
+    if (!/^[0-9]{10}$/.test(company_phone)) {
+      setError('El teléfono debe tener exactamente 10 dígitos')
+      setSubmitting(false)
+      return
+    }
+
     const spacesCount = Number(parking_spaces_count)
-    if (!Number.isFinite(spacesCount) || spacesCount < 1) {
-      setError('Indica al menos 1 cupo para el garaje.')
+    if (!Number.isFinite(spacesCount)) {
+      setError('Indica una cantidad valida de cupos para el garaje.')
       setSubmitting(false)
       return
     }
@@ -113,7 +127,7 @@ export default function Register() {
     }
 
     try {
-      const response = await register(email, password, name, {
+      const response = await registerRequest(email, password, name, {
         company_name,
         company_address,
         company_phone,
@@ -169,6 +183,28 @@ export default function Register() {
     }
   }, [])
 
+  useEffect(() => {
+    let timeoutId = null
+    let idleId = null
+
+    const enableDecor = () => setDecorReady(true)
+
+    if (typeof window.requestIdleCallback === 'function') {
+      idleId = window.requestIdleCallback(enableDecor, { timeout: 900 })
+    } else {
+      timeoutId = window.setTimeout(enableDecor, 350)
+    }
+
+    return () => {
+      if (idleId !== null && typeof window.cancelIdleCallback === 'function') {
+        window.cancelIdleCallback(idleId)
+      }
+      if (timeoutId !== null) {
+        window.clearTimeout(timeoutId)
+      }
+    }
+  }, [])
+
   useEffect(() => (
     () => {
       if (copyResetRef.current) {
@@ -178,18 +214,27 @@ export default function Register() {
   ), [])
 
   useEffect(() => {
-    if (!forceAccess || !user) return
-    logout().catch(() => null)
-  }, [forceAccess, user, logout])
+    const storedUser = getStoredUser()
 
-  useEffect(() => {
-    if (!forceAccess && !loading && user) {
-      navigate(getDefaultRouteForRole(user?.role, user?.status || user?.approval_status), { replace: true })
+    if (forceAccess) {
+      if (!storedUser) return
+      clearStoredAuth()
+      import('../lib/supabase')
+        .then(({ supabase }) => supabase.auth.signOut())
+        .catch(() => null)
+      return
     }
-  }, [forceAccess, loading, user, navigate])
+
+    if (storedUser) {
+      navigate(
+        getDefaultRouteForRole(storedUser?.role, storedUser?.status || storedUser?.approval_status),
+        { replace: true },
+      )
+    }
+  }, [forceAccess, navigate])
 
   return (
-    <div className="auth-page">
+    <div className={`auth-page${decorReady ? ' auth-page--decor' : ''}`}>
       <section className="auth-screen">
         <div className="auth-panel auth-panel--register auth-fade-in" ref={panelRef} onMouseMove={handleMouseMove}>
           <h1>Registro</h1>
@@ -264,20 +309,37 @@ export default function Register() {
                   value={form.company_address}
                   onChange={(event) => setForm({ ...form, company_address: event.target.value })}
                 />
+                <button
+                  type="button"
+                  className="auth-inline-action"
+                  onClick={() => setIsMapOpen(true)}
+                  aria-label="Seleccionar direccion en el mapa"
+                >
+                  Mapa
+                </button>
               </div>
+              <p className="auth-helper-copy">Busca la direccion exacta o selecciona el punto directamente en el mapa.</p>
             </div>
 
             <div className="auth-field">
               <label htmlFor="reg-company-phone">Telefono de empresa</label>
-              <div className="auth-input-icon">
+              <div
+                className={`auth-input-icon ${companyPhoneValid === false ? 'invalid' : ''} ${
+                  companyPhoneValid ? 'valid' : ''
+                }`}
+              >
                 <span className="material-symbols-outlined">call</span>
                 <input
                   id="reg-company-phone"
                   name="company_phone"
                   type="tel"
+                  inputMode="numeric"
+                  maxLength={10}
+                  pattern="[0-9]{10}"
                   placeholder="Telefono del negocio"
                   value={form.company_phone}
-                  onChange={(event) => setForm({ ...form, company_phone: event.target.value })}
+                  onChange={(event) => setForm({ ...form, company_phone: event.target.value.replace(/\D/g, '').slice(0, 10) })}
+                  required
                 />
               </div>
             </div>
@@ -290,9 +352,7 @@ export default function Register() {
                   id="reg-spaces-count"
                   name="parking_spaces_count"
                   type="number"
-                  min="1"
-                  max="300"
-                  placeholder="20"
+                  placeholder="Ej: 4000"
                   value={form.parking_spaces_count}
                   onChange={(event) => setForm({ ...form, parking_spaces_count: event.target.value })}
                   required
@@ -440,6 +500,20 @@ export default function Register() {
           </div>
         </div>
       )}
+
+      {isMapOpen ? (
+        <Suspense fallback={null}>
+          <RegisterMapModal
+            isOpen={isMapOpen}
+            initialAddress={form.company_address}
+            onClose={() => setIsMapOpen(false)}
+            onConfirm={({ address }) => {
+              setForm((current) => ({ ...current, company_address: address || current.company_address }))
+              setIsMapOpen(false)
+            }}
+          />
+        </Suspense>
+      ) : null}
     </div>
   )
 }

@@ -15,6 +15,7 @@ from config import Config
 
 _auth_client: Client | None = None
 _admin_client: Client | None = None
+_SUPABASE_SELECT_PAGE_SIZE = 1000
 
 
 def _build_httpx_client(timeout: float) -> httpx.Client:
@@ -167,6 +168,7 @@ def select_rows(
     order_candidates: list[str] | None = None,
     desc: bool = False,
     limit: int | None = None,
+    offset: int = 0,
 ) -> list[dict]:
     query_filters = _clone_filters(filters)
     ordering = list(order_candidates or [])
@@ -177,18 +179,48 @@ def select_rows(
     while True:
         order_column = ordering[0] if ordering else None
         try:
-            query = get_user_table_client(use_admin=True).table(table_name).select("*")
-            for item in query_filters:
-                value = item.get("value")
-                if value is None:
-                    continue
-                query = query.eq(item["column"], value)
-            if order_column:
-                query = query.order(order_column, desc=desc)
-            if limit:
-                query = query.limit(limit)
-            response = query.execute()
-            return response.data or []
+            if limit is not None and limit <= _SUPABASE_SELECT_PAGE_SIZE:
+                query = get_user_table_client(use_admin=True).table(table_name).select("*")
+                for item in query_filters:
+                    value = item.get("value")
+                    if value is None:
+                        continue
+                    query = query.eq(item["column"], value)
+                if order_column:
+                    query = query.order(order_column, desc=desc)
+                query = query.range(max(0, offset), max(0, offset) + limit - 1)
+                response = query.execute()
+                return response.data or []
+
+            rows: list[dict] = []
+            page_start = max(0, offset)
+            remaining = limit
+
+            while True:
+                page_size = _SUPABASE_SELECT_PAGE_SIZE if remaining is None else min(remaining, _SUPABASE_SELECT_PAGE_SIZE)
+                if page_size <= 0:
+                    break
+
+                query = get_user_table_client(use_admin=True).table(table_name).select("*")
+                for item in query_filters:
+                    value = item.get("value")
+                    if value is None:
+                        continue
+                    query = query.eq(item["column"], value)
+                if order_column:
+                    query = query.order(order_column, desc=desc)
+                query = query.range(page_start, page_start + page_size - 1)
+                response = query.execute()
+                page_rows = response.data or []
+                rows.extend(page_rows)
+
+                if len(page_rows) < page_size:
+                    break
+                page_start += page_size
+                if remaining is not None:
+                    remaining -= len(page_rows)
+
+            return rows
         except APIError as exc:
             missing_table = _extract_missing_table(exc)
             if missing_table == table_name:
@@ -495,7 +527,7 @@ def create_access_alert(
 ) -> None:
     try:
         insert_row(
-            "alertas_acceso",
+            "access_alerts",
             {
                 "garage_id": garage_id,
                 "descripcion": reason or "Acceso no autorizado detectado",

@@ -10,6 +10,7 @@ const NORMALIZED_API_BASE_URL = API_BASE_URL.replace('http://localhost:5000', 'h
 const BACKEND_API_URL = (NORMALIZED_API_BASE_URL || 'http://127.0.0.1:5000').replace(/\/$/, '')
 const GARAGE_STORAGE_KEY = 'smartpark_garage_id'
 const API_CACHE_PREFIX = 'smartpark_api_cache'
+export const DEFAULT_PAGE_SIZE = 50
 const DEFAULT_CACHE_POLICY = {
   freshMs: 60 * 1000,
   staleMs: 15 * 60 * 1000,
@@ -27,6 +28,7 @@ const CACHE_POLICIES = {
   '/api/parking-sessions': { freshMs: 30 * 1000, staleMs: 10 * 60 * 1000 },
   '/api/parking-sessions/active': { freshMs: 20 * 1000, staleMs: 5 * 60 * 1000 },
   '/api/payments': { freshMs: 30 * 1000, staleMs: 10 * 60 * 1000 },
+  '/api/vehiculos/activos': { freshMs: 15 * 1000, staleMs: 5 * 60 * 1000 },
   '/api/vehiculos': { freshMs: 30 * 1000, staleMs: 10 * 60 * 1000 },
   '/api/vehicles': { freshMs: 30 * 1000, staleMs: 10 * 60 * 1000 },
   '/api/vehicles/logs': { freshMs: 30 * 1000, staleMs: 10 * 60 * 1000 },
@@ -42,6 +44,7 @@ const ROUTE_MAP = {
   '/api/parking-spaces/stats': '/api/parking-spaces/stats',
 
   '/api/vehiculos': '/api/vehicles',
+  '/api/vehiculos/activos': '/api/vehiculos/activos',
   '/api/vehiculos/entrada': '/api/parking-sessions/entry',
   '/api/vehiculos/salida': '/api/parking-sessions/exit',
   '/api/vehiculos/logs': '/api/vehicles/logs',
@@ -71,6 +74,8 @@ const ROUTE_MAP = {
   '/api/access-codes/generate': '/api/access-codes/generate',
   '/api/access-codes/validate': '/api/access-codes/validate',
   '/api/access-codes/pending': '/api/access-codes/pending',
+  '/api/qr-access/verify': '/api/qr-access/verify',
+  '/api/monthly-plans': '/api/monthly-plans',
   '/api/monthly-plans/create': '/api/monthly-plans/create',
   '/api/monthly-plans/user': '/api/monthly-plans/user',
   '/api/monthly-plans/pay': '/api/monthly-plans/pay',
@@ -101,6 +106,7 @@ const CACHEABLE_PATHS = new Set([
   '/api/alertas-acceso',
   '/api/access-codes/pending',
   '/api/dashboard/stats',
+  '/api/monthly-plans',
   '/api/monthly-plans/pending',
   '/api/morosidad/usuarios',
   '/api/morosidad/stats',
@@ -110,6 +116,7 @@ const CACHEABLE_PATHS = new Set([
   '/api/parking-sessions/active',
   '/api/parking-sessions',
   '/api/payments',
+  '/api/vehiculos/activos',
   '/api/usuarios/',
   '/api/users/',
   '/api/visitantes/activos',
@@ -119,26 +126,62 @@ const CACHEABLE_PATHS = new Set([
   '/api/vehicles/logs',
 ])
 
+const AUTH_REQUIRED_PATH_PREFIXES = [
+  '/api/access-codes',
+  '/api/qr-access',
+  '/api/alertas-acceso',
+  '/api/auth/me',
+  '/api/auth/settings',
+  '/api/dashboard',
+  '/api/monthly-plans',
+  '/api/morosidad',
+  '/api/notificaciones',
+  '/api/parking-sessions',
+  '/api/parking-spaces',
+  '/api/payments',
+  '/api/reservas',
+  '/api/users',
+  '/api/usuarios',
+  '/api/vehicles',
+  '/api/vehiculos',
+  '/api/visitantes',
+]
+
+function splitPathAndQuery(path) {
+  const value = String(path || '').trim()
+  const [pathname = '', query = ''] = value.split('?')
+  return {
+    pathname,
+    query: query ? `?${query}` : '',
+  }
+}
+
+function getPolicyPath(path) {
+  return splitPathAndQuery(path).pathname
+}
+
 function resolveRoute(path) {
-  if (path === '/api/vehiculos/') return '/api/vehicles'
-  if (path === '/api/usuarios/') return '/api/users'
+  const { pathname, query } = splitPathAndQuery(path)
 
-  const updateUserRoleMatch = path.match(/^\/api\/usuarios\/([^/]+)\/rol\/?$/)
+  if (pathname === '/api/vehiculos/') return `/api/vehicles${query}`
+  if (pathname === '/api/usuarios/') return `/api/users${query}`
+
+  const updateUserRoleMatch = pathname.match(/^\/api\/usuarios\/([^/]+)\/rol\/?$/)
   if (updateUserRoleMatch) {
-    return `/api/users/${updateUserRoleMatch[1]}`
+    return `/api/users/${updateUserRoleMatch[1]}${query}`
   }
 
-  const notificationReadMatch = path.match(/^\/api\/notificaciones\/([^/]+)\/leer\/?$/)
+  const notificationReadMatch = pathname.match(/^\/api\/notificaciones\/([^/]+)\/leer\/?$/)
   if (notificationReadMatch) {
-    return `/api/notificaciones/mark-read/${notificationReadMatch[1]}`
+    return `/api/notificaciones/mark-read/${notificationReadMatch[1]}${query}`
   }
 
-  if (ROUTE_MAP[path]) return ROUTE_MAP[path]
+  if (ROUTE_MAP[pathname]) return `${ROUTE_MAP[pathname]}${query}`
 
   for (const [frontend, backend] of Object.entries(ROUTE_MAP)) {
-    if (path.startsWith(`${frontend}/`)) {
-      const suffix = path.slice(frontend.length)
-      return `${backend}${suffix}`
+    if (pathname.startsWith(`${frontend}/`)) {
+      const suffix = pathname.slice(frontend.length)
+      return `${backend}${suffix}${query}`
     }
   }
 
@@ -159,6 +202,11 @@ function getGarageId() {
   }
 
   return ''
+}
+
+function pathRequiresAuth(path) {
+  const normalizedPath = getPolicyPath(path)
+  return AUTH_REQUIRED_PATH_PREFIXES.some((prefix) => normalizedPath === prefix || normalizedPath.startsWith(`${prefix}/`))
 }
 
 function normalizeParkingSpace(row = {}) {
@@ -368,6 +416,10 @@ function normalizeExitPayload(payload) {
       placa: session.placa || session.plate || '',
       hora_salida: session.salida || session.exit_time || null,
       exit_time: session.exit_time || session.salida || null,
+      metodo: session.metodo || session.payment_method || '',
+      payment_method: session.payment_method || session.metodo || '',
+      referencia: session.referencia || session.payment_reference || '',
+      payment_reference: session.payment_reference || session.referencia || '',
       tiempo_total_minutos: durationMinutes,
       duracion: durationMinutes,
       duration_minutes: durationMinutes,
@@ -380,31 +432,33 @@ function normalizeExitPayload(payload) {
 }
 
 function normalizePayload(path, payload) {
-  if (path === '/api/notificaciones') {
+  const normalizedPath = getPolicyPath(path)
+
+  if (normalizedPath === '/api/notificaciones') {
     return normalizeNotificationsPayload(payload)
   }
 
-  if (path === '/api/alertas-acceso') {
+  if (normalizedPath === '/api/alertas-acceso') {
     return normalizeAlertsPayload(payload)
   }
 
-  if (path === '/api/parking-spaces') {
+  if (normalizedPath === '/api/parking-spaces') {
     return normalizeParkingSpacesPayload(payload)
   }
 
-  if (path === '/api/vehiculos' || path === '/api/vehiculos/' || path === '/api/vehicles') {
+  if (normalizedPath === '/api/vehiculos' || normalizedPath === '/api/vehiculos/' || normalizedPath === '/api/vehiculos/activos' || normalizedPath === '/api/vehicles') {
     return normalizeVehiclesPayload(payload)
   }
 
-  if (path === '/api/parking-sessions') {
+  if (normalizedPath === '/api/parking-sessions') {
     return normalizeSessionsPayload(payload)
   }
 
-  if (path === '/api/vehiculos/entrada' || path === '/api/parking-sessions/entry') {
+  if (normalizedPath === '/api/vehiculos/entrada' || normalizedPath === '/api/parking-sessions/entry') {
     return normalizeEntryPayload(payload)
   }
 
-  if (path === '/api/vehiculos/salida' || path === '/api/parking-sessions/exit') {
+  if (normalizedPath === '/api/vehiculos/salida' || normalizedPath === '/api/parking-sessions/exit') {
     return normalizeExitPayload(payload)
   }
 
@@ -416,11 +470,11 @@ function getCacheKey(path) {
 }
 
 function getCachePolicy(path) {
-  return CACHE_POLICIES[path] ?? DEFAULT_CACHE_POLICY
+  return CACHE_POLICIES[getPolicyPath(path)] ?? DEFAULT_CACHE_POLICY
 }
 
 function isCacheable(path) {
-  return CACHEABLE_PATHS.has(path)
+  return CACHEABLE_PATHS.has(getPolicyPath(path))
 }
 
 function removePersistedCache(cacheKey) {
@@ -494,6 +548,32 @@ export function getCachedApiData(path) {
   return getCachedEntry(path, { allowStale: true })?.payload ?? null
 }
 
+export function buildPaginatedPath(path, { page = 1, pageSize = DEFAULT_PAGE_SIZE, searchParams = {} } = {}) {
+  const { pathname, query } = splitPathAndQuery(path)
+  const params = new URLSearchParams(query.startsWith('?') ? query.slice(1) : query)
+  params.set('page', String(Math.max(1, Number(page) || 1)))
+  params.set('page_size', String(Math.max(1, Number(pageSize) || DEFAULT_PAGE_SIZE)))
+
+  Object.entries(searchParams || {}).forEach(([key, value]) => {
+    if (value === undefined || value === null || value === '') return
+    params.set(key, String(value))
+  })
+
+  const serialized = params.toString()
+  return serialized ? `${pathname}?${serialized}` : pathname
+}
+
+export function getPaginationMeta(payload, fallbackPageSize = DEFAULT_PAGE_SIZE) {
+  const meta = payload?.meta || {}
+  return {
+    page: Number(meta.page || 1) || 1,
+    pageSize: Number(meta.page_size || fallbackPageSize) || fallbackPageSize,
+    total: Number(meta.total || (Array.isArray(payload?.data) ? payload.data.length : 0)) || 0,
+    pageCount: Number(meta.page_count || 1) || 1,
+    hasMore: Boolean(meta.has_more),
+  }
+}
+
 export function invalidateApiCache(paths = []) {
   const targets = Array.isArray(paths) ? paths : [paths]
 
@@ -526,6 +606,7 @@ function invalidateByMutation(path) {
   if (path.startsWith('/api/vehiculos') || path.startsWith('/api/vehicles')) {
     invalidateApiCache([
       '/api/dashboard/stats',
+      '/api/vehiculos/activos',
       '/api/vehiculos',
       '/api/vehicles',
       '/api/vehicles/logs',
@@ -581,8 +662,22 @@ function invalidateByMutation(path) {
     invalidateApiCache(['/api/access-codes/pending', '/api/parking-spaces', '/api/parking-spaces/stats', '/api/vehiculos', '/api/vehicles'])
   }
 
+  if (path.startsWith('/api/qr-access')) {
+    invalidateApiCache([
+      '/api/access-codes/pending',
+      '/api/dashboard/stats',
+      '/api/parking-spaces',
+      '/api/parking-spaces/stats',
+      '/api/parking-sessions',
+      '/api/parking-sessions/active',
+      '/api/vehiculos',
+      '/api/vehicles',
+      '/api/vehicles/logs',
+    ])
+  }
+
   if (path.startsWith('/api/monthly-plans')) {
-    invalidateApiCache(['/api/monthly-plans/pending', '/api/morosidad/usuarios', '/api/morosidad/stats', '/api/dashboard/stats', '/api/usuarios/', '/api/users/'])
+    invalidateApiCache(['/api/monthly-plans', '/api/monthly-plans/pending', '/api/morosidad/usuarios', '/api/morosidad/stats', '/api/dashboard/stats', '/api/usuarios/', '/api/users/'])
   }
 
   if (path.startsWith('/api/reservas')) {
@@ -592,6 +687,19 @@ function invalidateByMutation(path) {
   if (path.startsWith('/api/auth/')) {
     invalidateApiCache('/api/auth/me')
   }
+}
+
+function shouldClearStoredAuthOn401(path, payload) {
+  if (path !== '/api/auth/me') return false
+
+  const message = String(payload?.error ?? payload?.mensaje ?? payload?.message ?? '').toLowerCase()
+  return (
+    message.includes('token') ||
+    message.includes('autentic') ||
+    message.includes('sesion') ||
+    message.includes('no autorizado') ||
+    message.includes('unauthorized')
+  )
 }
 
 async function apiFetch(path, options = {}) {
@@ -609,7 +717,9 @@ async function apiFetch(path, options = {}) {
   const backendPath = resolveRoute(path)
 
   let finalPath = backendPath
-  if ((path === '/api/vehiculos' || path === '/api/vehiculos/') && garageId) {
+  if (path === '/api/vehiculos/activos' && garageId) {
+    finalPath = `/api/vehicles/garage/${garageId}/active`
+  } else if ((path === '/api/vehiculos' || path === '/api/vehiculos/') && garageId) {
     finalPath = `/api/vehicles/garage/${garageId}`
   }
 
@@ -650,7 +760,7 @@ async function apiFetch(path, options = {}) {
       }
     }
 
-    if (response.status === 401) {
+    if (response.status === 401 && shouldClearStoredAuthOn401(path, payload)) {
       clearStoredAuth()
     }
 
@@ -696,7 +806,12 @@ export async function apiGet(path, options = {}) {
 
 export async function primeApiCache(paths = []) {
   const targets = Array.isArray(paths) ? paths : [paths]
-  const uniqueTargets = [...new Set(targets.filter(Boolean))]
+  const token = await getFreshAuthToken().catch(() => '')
+  const uniqueTargets = [
+    ...new Set(
+      targets.filter((path) => path && (!pathRequiresAuth(path) || token)),
+    ),
+  ]
   const concurrency = 2
   let cursor = 0
 

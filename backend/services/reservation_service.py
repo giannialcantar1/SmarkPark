@@ -82,7 +82,7 @@ class ReservationService:
 
     def _reservations(self, *, garage_id: str) -> list[dict[str, Any]]:
         return select_rows(
-            "reservas",
+            "reservations",
             filters=[{"column": "garage_id", "value": garage_id, "optional": True}],
             order_candidates=["fecha_entrada", "created_at"],
             desc=False,
@@ -204,7 +204,7 @@ class ReservationService:
         auth_user_id = str((user or {}).get("auth_user_id") or (user or {}).get("user_id") or user_id).strip()
 
         created = insert_row(
-            "reservas",
+            "reservations",
             {
                 "garage_id": garage_id,
                 "user_id": stored_user_id,
@@ -237,7 +237,7 @@ class ReservationService:
             return None
 
         update_rows(
-            "reservas",
+            "reservations",
             payload={"estado": "cancelado"},
             filters=[{"column": "id", "value": target.get("id"), "optional": False}],
         )
@@ -276,7 +276,7 @@ class ReservationService:
         )
 
         update_rows(
-            "reservas",
+            "reservations",
             payload={"estado": "activo"},
             filters=[{"column": "id", "value": target.get("id"), "optional": False}],
         )

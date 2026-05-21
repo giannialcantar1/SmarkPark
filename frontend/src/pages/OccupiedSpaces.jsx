@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from 'react'
+import { Suspense, lazy, useEffect, useMemo, useState } from 'react'
 
-import ModalEntry from '../components/ModalEntry'
 import NotificationsBell from '../components/NotificationsBell'
 import { apiGet, getCachedApiData } from '../lib/api'
+
+const ModalEntry = lazy(() => import('../components/ModalEntry'))
 
 const TARIFAS = [
   { label: 'Fracción (15 min)', value: 'RD$ 5.00' },
@@ -416,11 +417,13 @@ export default function OccupiedSpaces() {
         </div>
       </div>
 
-      <ModalEntry
-        isOpen={isEntryOpen}
-        onClose={() => setIsEntryOpen(false)}
-        onSuccess={() => loadData({ showLoader: false, forceFresh: true })}
-      />
+      <Suspense fallback={null}>
+        <ModalEntry
+          isOpen={isEntryOpen}
+          onClose={() => setIsEntryOpen(false)}
+          onSuccess={() => loadData({ showLoader: false, forceFresh: true })}
+        />
+      </Suspense>
     </div>
   )
 }

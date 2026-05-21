@@ -11,15 +11,18 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks(id) {
+          if (id.includes('vite/preload-helper') || id.includes('vite/modulepreload-polyfill')) {
+            return 'preload'
+          }
+
           if (!id.includes('node_modules')) return
 
-          if (id.includes('react-router')) return 'router'
-          if (id.includes('@supabase')) return 'supabase'
-          if (id.includes('react-dom') || id.includes('/react/')) return 'react-core'
+          if (id.includes('leaflet')) return 'maps'
           if (id.includes('jspdf') || id.includes('html2canvas')) return 'pdf-tools'
           if (id.includes('chart.js')) return 'charts'
-
-          return 'vendor'
+          if (id.includes('@supabase')) return 'supabase'
+          if (id.includes('react-router')) return 'router'
+          if (id.includes('react-dom') || id.includes('/react/')) return 'react-core'
         },
       },
     },

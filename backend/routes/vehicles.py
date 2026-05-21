@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from flask import Blueprint, g, jsonify, request
+from flask_cors import cross_origin
 
+from utils.pagination import get_pagination_params, paginate_items
 from controllers import VehicleController
 from utils.decorators import auth_required
 from utils.supabase_client import (
@@ -17,6 +19,7 @@ from utils.supabase_client import (
 
 
 vehicles_bp = Blueprint("vehicles", __name__, url_prefix="/api/vehicles")
+legacy_vehicles_bp = Blueprint("legacy_vehicles", __name__, url_prefix="/api/vehiculos")
 controller = VehicleController()
 
 
@@ -29,6 +32,13 @@ def _load_garage_vehicles() -> list[dict]:
     )
     vehicles = [normalize_vehicle(row) for row in rows]
     return _attach_session_details(vehicles)
+
+
+def _is_active_vehicle(row: dict) -> bool:
+    if row.get("hora_salida") or row.get("exit_time"):
+        return False
+    status = normalize_text(row.get("status") or row.get("estado"))
+    return status in {"dentro", "activo", "active", "inside"}
 
 
 def _session_sort_value(session: dict) -> str:
@@ -127,6 +137,14 @@ def _attach_session_details(vehicles: list[dict]) -> list[dict]:
     return enriched
 
 
+def _json_paginated_rows(rows: list[dict]):
+    pagination = get_pagination_params()
+    if not pagination["enabled"]:
+        return jsonify({"success": True, "data": rows})
+    page_rows, meta = paginate_items(rows, page=pagination["page"], page_size=pagination["page_size"])
+    return jsonify({"success": True, "data": page_rows, "meta": meta})
+
+
 @vehicles_bp.get("")
 @auth_required
 def list_user_vehicles():
@@ -135,7 +153,11 @@ def list_user_vehicles():
         for row in _load_garage_vehicles()
         if row_belongs_to_user(row, g.current_user_id, g.current_user_email)
     ]
-    return jsonify({"success": True, "data": vehicles})
+    pagination = get_pagination_params()
+    if not pagination["enabled"]:
+        return jsonify({"success": True, "data": vehicles})
+    page_rows, meta = paginate_items(vehicles, page=pagination["page"], page_size=pagination["page_size"])
+    return jsonify({"success": True, "data": page_rows, "meta": meta})
 
 
 @vehicles_bp.post("")
@@ -150,7 +172,27 @@ def list_garage_vehicles(garage_id: str):
     if normalize_text(garage_id) != normalize_text(g.current_user_garage_id):
         return jsonify({"success": False, "error": "No autorizado para consultar ese garage"}), 403
 
-    return jsonify({"success": True, "data": _load_garage_vehicles()})
+    rows = _load_garage_vehicles()
+    return _json_paginated_rows(rows)
+
+
+@vehicles_bp.get("/garage/<garage_id>/active")
+@cross_origin()
+@auth_required
+def list_active_garage_vehicles(garage_id: str):
+    if normalize_text(garage_id) != normalize_text(g.current_user_garage_id):
+        return jsonify({"success": False, "error": "No autorizado para consultar ese garage"}), 403
+
+    rows = [row for row in _load_garage_vehicles() if _is_active_vehicle(row)]
+    return _json_paginated_rows(rows)
+
+
+@legacy_vehicles_bp.route("/activos", methods=["GET", "OPTIONS"])
+@cross_origin()
+@auth_required
+def list_active_vehicles_legacy():
+    rows = [row for row in _load_garage_vehicles() if _is_active_vehicle(row)]
+    return _json_paginated_rows(rows)
 
 
 @vehicles_bp.get("/search")
