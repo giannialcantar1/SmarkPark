@@ -53,11 +53,18 @@ class ParkingController:
     def exit(self):
         payload = request.get_json(silent=True) or {}
         placa = str(payload.get("placa") or payload.get("plate") or "").strip().upper()
+        payment_method = str(payload.get("payment_method") or payload.get("metodo") or "").strip().lower()
+        payment_reference = str(payload.get("payment_reference") or payload.get("referencia") or payload.get("reference") or "").strip()
         if not placa:
             return jsonify({"success": False, "error": "placa es requerida"}), 400
 
         try:
-            result = self.parking_service.register_exit(garage_id=g.current_user_garage_id, placa=placa)
+            result = self.parking_service.register_exit(
+                garage_id=g.current_user_garage_id,
+                placa=placa,
+                payment_method=payment_method,
+                payment_reference=payment_reference,
+            )
             return jsonify(
                 {
                     "success": True,

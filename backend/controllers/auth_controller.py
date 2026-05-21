@@ -142,7 +142,7 @@ class AuthController:
             return jsonify({"success": False, "error": "La contrasena debe tener al menos 6 caracteres"}), 400
 
         try:
-            parking_spaces_count = max(1, min(int(parking_spaces_count), 300))
+            parking_spaces_count = int(parking_spaces_count)
         except (TypeError, ValueError):
             return jsonify({"success": False, "error": "Los cupos iniciales deben ser un numero valido"}), 400
 

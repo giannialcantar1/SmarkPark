@@ -27,6 +27,8 @@ def normalize_payment(row: dict[str, Any]) -> dict[str, Any]:
         "amount": amount,
         "metodo": _first_present(row, "metodo", "payment_method", "method", default=""),
         "payment_method": _first_present(row, "metodo", "payment_method", "method", default=""),
+        "referencia": _first_present(row, "referencia", "payment_reference", "reference", default=""),
+        "payment_reference": _first_present(row, "referencia", "payment_reference", "reference", default=""),
         "estado": _first_present(row, "estado", "status", default="pendiente"),
         "status": _first_present(row, "estado", "status", default="pendiente"),
         "fecha": _first_present(row, "fecha", "created_at"),

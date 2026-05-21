@@ -9,12 +9,12 @@ from utils.supabase_client import get_supabase_admin_client, normalize_text, par
 notificaciones_bp = Blueprint("notificaciones", __name__, url_prefix="/api/notificaciones")
 
 
-def _same_garage_or_global(row: dict) -> bool:
+def _same_garage(row: dict) -> bool:
     row_garage = normalize_text(row.get("garage_id"))
     current_garage = normalize_text(g.current_user_garage_id)
-    if not row_garage:
-        return True
-    return not current_garage or row_garage == current_garage
+    if not current_garage or not row_garage:
+        return False
+    return row_garage == current_garage
 
 
 @notificaciones_bp.get("")
@@ -37,7 +37,7 @@ def get_notificaciones():
         notifications = []
 
         for row in notifications_rows:
-            if not _same_garage_or_global(row):
+            if not _same_garage(row):
                 continue
 
             timestamp = parse_datetime(row.get("created_at") or row.get("fecha"))
@@ -52,7 +52,7 @@ def get_notificaciones():
             })
 
         for row in access_alert_rows:
-            if not _same_garage_or_global(row):
+            if not _same_garage(row):
                 continue
 
             timestamp = parse_datetime(row.get("created_at") or row.get("fecha"))
@@ -84,12 +84,16 @@ def mark_notification_read(notification_id):
         if client is None:
             return jsonify({"success": False, "error": "Cliente admin de Supabase no disponible"}), 500
 
+        current_garage = normalize_text(g.current_user_garage_id)
+        if not current_garage:
+            return jsonify({"success": False, "error": "garage_id de la sesion no disponible"}), 400
+
         if str(notification_id).startswith("alerta-"):
             alert_id = str(notification_id).replace("alerta-", "", 1)
-            client.from_("alertas_acceso").update({"estado": "leida"}).eq("id", alert_id).execute()
+            client.from_("alertas_acceso").update({"estado": "leida"}).eq("id", alert_id).eq("garage_id", current_garage).execute()
             return jsonify({"success": True, "message": "Alerta marcada como leida"})
 
-        client.from_("notificaciones").update({"leida": True}).eq("id", notification_id).execute()
+        client.from_("notificaciones").update({"leida": True}).eq("id", notification_id).eq("garage_id", current_garage).execute()
         return jsonify({"success": True, "message": "Notificacion marcada como leida"})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500

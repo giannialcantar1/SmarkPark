@@ -304,7 +304,33 @@ def get_user_role(user: Any) -> str:
 
 
 def _find_user_profile(auth_user_id: str | None, email: str | None) -> dict[str, Any] | None:
-    return None  # TEMPORAL: deshabilitado por loop infinito
+    normalized_auth_user_id = normalize_text(auth_user_id)
+    normalized_email = normalize_text(email)
+
+    if normalized_auth_user_id:
+        for column in ("auth_user_id", "user_id", "id"):
+            rows = select_rows(
+                "users",
+                filters=[{"column": column, "value": auth_user_id, "optional": True}],
+                order_candidates=["updated_at", "created_at", "email"],
+                desc=True,
+                limit=1,
+            )
+            if rows:
+                return rows[0]
+
+    if normalized_email:
+        rows = select_rows(
+            "users",
+            filters=[{"column": "email", "value": normalized_email, "optional": False}],
+            order_candidates=["updated_at", "created_at", "email"],
+            desc=True,
+            limit=1,
+        )
+        if rows:
+            return rows[0]
+
+    return None
 
 
 def get_user_garage_id(user: Any, fallback: str | None = None) -> str:

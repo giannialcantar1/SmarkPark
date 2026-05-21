@@ -10,6 +10,66 @@ class UserService:
     def __init__(self) -> None:
         self.user_repository = UserRepository()
 
+    @staticmethod
+    def _identity_keys(row: dict[str, Any] | None) -> set[str]:
+        if not row:
+            return set()
+        return {
+            key
+            for key in {
+                normalize_text((row or {}).get("id")),
+                normalize_text((row or {}).get("auth_user_id")),
+                normalize_text((row or {}).get("user_id")),
+            }
+            if key
+        }
+
+    @staticmethod
+    def _identity_email(row: dict[str, Any] | None) -> str:
+        return normalize_text((row or {}).get("email"))
+
+    @staticmethod
+    def _dedupe_key(row: dict[str, Any]) -> str:
+        identity_keys = UserService._identity_keys(row)
+        if identity_keys:
+            return sorted(identity_keys)[0]
+        return UserService._identity_email(row)
+
+    def _garage_membership_reference(self, *, garage_id: str) -> tuple[set[str], set[str], list[dict[str, Any]]]:
+        direct_rows = self.user_repository.get_all(
+            filters=[{"column": "garage_id", "value": garage_id, "optional": False}],
+            order_candidates=["created_at", "updated_at", "nombre", "email"],
+            desc=True,
+            limit=1000,
+        )
+        logs = select_rows(
+            "registration_logs",
+            filters=[{"column": "garage_id", "value": garage_id, "optional": True}],
+            order_candidates=["created_at", "updated_at", "email"],
+            desc=True,
+            limit=1000,
+        )
+
+        garage_keys: set[str] = set()
+        garage_emails: set[str] = set()
+        for row in [*direct_rows, *logs]:
+            garage_keys.update(self._identity_keys(row))
+            email = self._identity_email(row)
+            if email:
+                garage_emails.add(email)
+
+        return garage_keys, garage_emails, direct_rows
+
+    def _belongs_to_garage(self, row: dict[str, Any], *, garage_id: str, garage_keys: set[str], garage_emails: set[str]) -> bool:
+        if normalize_text(row.get("garage_id")) == normalize_text(garage_id):
+            return True
+
+        if self._identity_keys(row).intersection(garage_keys):
+            return True
+
+        email = self._identity_email(row)
+        return bool(email and email in garage_emails)
+
     def create_user(self, user, *, garage_id: str | None = None, name: str | None = None, role: str | None = None) -> dict | None:
         profile = ensure_user_profile(user, garage_id=garage_id, name=name, role=role)
         if not profile:
@@ -25,11 +85,28 @@ class UserService:
         return profile
 
     def list_users(self, *, garage_id: str) -> list[dict]:
-        return self.user_repository.get_all(
-            filters=[{"column": "garage_id", "value": garage_id, "optional": False}],
+        garage_keys, garage_emails, direct_rows = self._garage_membership_reference(garage_id=garage_id)
+        all_rows = self.user_repository.get_all(
             order_candidates=["created_at", "updated_at", "nombre", "email"],
             desc=True,
+            limit=1000,
         )
+
+        merged: list[dict[str, Any]] = []
+        seen: set[str] = set()
+
+        for row in [*direct_rows, *all_rows]:
+            if not self._belongs_to_garage(row, garage_id=garage_id, garage_keys=garage_keys, garage_emails=garage_emails):
+                continue
+
+            dedupe_key = self._dedupe_key(row)
+            if not dedupe_key or dedupe_key in seen:
+                continue
+
+            seen.add(dedupe_key)
+            merged.append(row)
+
+        return merged
 
     def get_user(self, *, user_id: str | None = None, email: str | None = None) -> dict | None:
         if user_id:

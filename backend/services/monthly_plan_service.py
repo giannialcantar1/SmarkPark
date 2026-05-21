@@ -3,7 +3,18 @@ from __future__ import annotations
 from datetime import date
 from typing import Any
 
-from utils.supabase_client import normalize_text, parse_datetime, select_rows, insert_row, update_rows, utcnow_iso
+from postgrest.exceptions import APIError
+
+from services.user_service import UserService
+from utils.supabase_client import (
+    get_user_table_client,
+    normalize_text,
+    parse_datetime,
+    select_rows,
+    insert_row,
+    update_rows,
+    utcnow_iso,
+)
 
 
 def _user_keys(row: dict[str, Any]) -> list[str]:
@@ -16,14 +27,32 @@ def _user_keys(row: dict[str, Any]) -> list[str]:
 
 
 class MonthlyPlanService:
+    def __init__(self) -> None:
+        self.user_service = UserService()
+        self._table_available: bool | None = None
+
+    def _ensure_table_available(self) -> None:
+        if self._table_available is True:
+            return
+        if self._table_available is False:
+            raise RuntimeError(
+                "La tabla public.monthly_plans no existe en Supabase. Ejecuta backend/sql/2026-05-04_monthly_plans.sql para habilitar mensualidades."
+            )
+
+        try:
+            get_user_table_client(use_admin=True).table("monthly_plans").select("id").limit(1).execute()
+            self._table_available = True
+        except APIError as exc:
+            message = str(exc or "")
+            if "public.monthly_plans" in message:
+                self._table_available = False
+                raise RuntimeError(
+                    "La tabla public.monthly_plans no existe en Supabase. Ejecuta backend/sql/2026-05-04_monthly_plans.sql para habilitar mensualidades."
+                ) from exc
+            raise
+
     def _users_by_key(self, *, garage_id: str) -> dict[str, dict[str, Any]]:
-        rows = select_rows(
-            "users",
-            filters=[{"column": "garage_id", "value": garage_id, "optional": True}],
-            order_candidates=["created_at", "updated_at", "email"],
-            desc=True,
-            limit=500,
-        )
+        rows = self.user_service.list_users(garage_id=garage_id)
         lookup: dict[str, dict[str, Any]] = {}
         for row in rows:
             for key in _user_keys(row):
@@ -60,6 +89,7 @@ class MonthlyPlanService:
         }
 
     def _rows(self, *, garage_id: str) -> list[dict[str, Any]]:
+        self._ensure_table_available()
         return select_rows(
             "monthly_plans",
             filters=[{"column": "garage_id", "value": garage_id, "optional": False}],
@@ -92,6 +122,7 @@ class MonthlyPlanService:
         due_date: str,
         status: str = "pendiente",
     ) -> dict[str, Any]:
+        self._ensure_table_available()
         existing = self.get_user_plan(garage_id=garage_id, user_id=user_id)
         payload = {
             "garage_id": garage_id,
@@ -110,9 +141,15 @@ class MonthlyPlanService:
         else:
             insert_row("monthly_plans", payload)
 
-        return self.get_user_plan(garage_id=garage_id, user_id=user_id) or payload
+        persisted = self.get_user_plan(garage_id=garage_id, user_id=user_id)
+        if not persisted:
+            raise RuntimeError(
+                "No se pudo confirmar el guardado del plan mensual en Supabase."
+            )
+        return persisted
 
     def mark_paid(self, *, garage_id: str, plan_id: str | None = None, user_id: str | None = None) -> dict[str, Any] | None:
+        self._ensure_table_available()
         plans = self.list_plans(garage_id=garage_id)
         target = next(
             (

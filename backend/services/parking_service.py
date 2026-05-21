@@ -4,7 +4,7 @@ from math import ceil
 
 from config import Config
 from repositories import ParkingSpaceRepository, SessionRepository, VehicleRepository
-from utils.supabase_client import get_hourly_rate, insert_row, normalize_parking_space, normalize_session, normalize_text, parse_datetime, select_rows, utcnow, utcnow_iso
+from utils.supabase_client import get_hourly_rate, insert_row, normalize_parking_space, normalize_session, normalize_text, parse_datetime, select_rows, update_rows, utcnow, utcnow_iso
 
 
 class ParkingService:
@@ -319,8 +319,17 @@ class ParkingService:
             "message": "Entrada registrada correctamente",
         }
 
-    def register_exit(self, *, garage_id: str, placa: str) -> dict:
+    def register_exit(
+        self,
+        *,
+        garage_id: str,
+        placa: str,
+        payment_method: str = "",
+        payment_reference: str = "",
+    ) -> dict:
         normalized_plate = placa.strip().upper()
+        normalized_payment_method = payment_method.strip().lower() or "checkout"
+        normalized_payment_reference = payment_reference.strip()
         vehicles_by_id = {str(row.get("id")): row for row in self._vehicles(garage_id=garage_id) if row.get("id")}
         session = next(
             (
@@ -390,6 +399,10 @@ class ParkingService:
         normalized["paid"] = True
         normalized["paid_at"] = exit_time
         normalized["is_active"] = False
+        normalized["metodo"] = normalized_payment_method
+        normalized["payment_method"] = normalized_payment_method
+        normalized["referencia"] = normalized_payment_reference
+        normalized["payment_reference"] = normalized_payment_reference
         if not normalized.get("plate"):
             normalized["plate"] = session.get("plate") or (vehicle or {}).get("plate") or normalized_plate
             normalized["placa"] = normalized["plate"]
@@ -405,7 +418,23 @@ class ParkingService:
                 limit=1,
             )
             if existing_payment:
-                payment = existing_payment[0]
+                updated_payment = update_rows(
+                    "payments",
+                    payload={
+                        "metodo": normalized_payment_method,
+                        "payment_method": normalized_payment_method,
+                        "method": normalized_payment_method,
+                        "referencia": normalized_payment_reference,
+                        "payment_reference": normalized_payment_reference,
+                        "reference": normalized_payment_reference,
+                        "estado": "pagado",
+                        "status": "paid",
+                        "fecha": exit_time,
+                        "paid_at": exit_time,
+                    },
+                    filters=[{"column": "id", "value": existing_payment[0].get("id"), "optional": False}],
+                )
+                payment = updated_payment[0] if updated_payment else {**existing_payment[0], "metodo": normalized_payment_method}
             else:
                 payment = insert_row(
                     "payments",
@@ -415,8 +444,12 @@ class ParkingService:
                         "parking_session_id": session_id,
                         "monto": amount,
                         "amount": amount,
-                        "metodo": "checkout",
-                        "payment_method": "checkout",
+                        "metodo": normalized_payment_method,
+                        "payment_method": normalized_payment_method,
+                        "method": normalized_payment_method,
+                        "referencia": normalized_payment_reference,
+                        "payment_reference": normalized_payment_reference,
+                        "reference": normalized_payment_reference,
                         "estado": "pagado",
                         "status": "paid",
                         "fecha": exit_time,
