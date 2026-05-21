@@ -28,8 +28,8 @@ REQUIRED_TABLES = [
     "parking_sessions",
     "payments",
     "service_rates",
-    "notificaciones",
-    "alertas_acceso",
+    "notifications",
+    "access_alerts",
     "auth_logs",
     "parking_history",
 ]

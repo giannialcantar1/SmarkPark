@@ -11,11 +11,11 @@ from app.supabase_client import get_supabase_admin_client, get_user_garage_id
 notificaciones_bp = Blueprint('notificaciones', __name__, url_prefix='/api/notificaciones')
 
 
-def _is_missing_notificaciones_table_error(error: Exception) -> bool:
+def _is_missing_notifications_table_error(error: Exception) -> bool:
     message = str(error)
     lowered = message.lower()
-    return 'notificaciones' in lowered and (
-        "could not find the table 'public.notificaciones'" in lowered
+    return 'notifications' in lowered and (
+        "could not find the table 'public.notifications'" in lowered
         or 'schema cache' in lowered
         or 'pgrst205' in lowered
     )
@@ -74,11 +74,11 @@ def crear_notificacion(
     }
 
     try:
-        response = client.table('notificaciones').insert(payload).execute()
+        response = client.table('notifications').insert(payload).execute()
         data = response.data or []
         return data[0] if data else payload
     except Exception as exc:
-        if _is_missing_notificaciones_table_error(exc):
+        if _is_missing_notifications_table_error(exc):
             return None
         raise
 
@@ -93,7 +93,7 @@ def listar_notificaciones():
     try:
         garage_id = get_current_garage(required=True)
         response = (
-            client.table('notificaciones')
+            client.table('notifications')
             .select('*')
             .eq('garage_id', garage_id)
             .order('created_at', desc=True)
@@ -103,7 +103,7 @@ def listar_notificaciones():
     except RuntimeError as exc:
         return jsonify({'error': str(exc)}), 403
     except Exception as exc:
-        if _is_missing_notificaciones_table_error(exc):
+        if _is_missing_notifications_table_error(exc):
             return jsonify({'data': []}), 200
         return jsonify({'error': str(exc)}), 500
 
@@ -135,7 +135,7 @@ def registrar_notificacion():
     except RuntimeError as exc:
         return jsonify({'error': str(exc)}), 403
     except Exception as exc:
-        if _is_missing_notificaciones_table_error(exc):
+        if _is_missing_notifications_table_error(exc):
             return jsonify({'data': None, 'mensaje': 'Notificaciones deshabilitadas temporalmente.'}), 201
         return jsonify({'error': str(exc)}), 500
 
@@ -150,7 +150,7 @@ def marcar_notificacion_leida(notificacion_id: str):
     try:
         garage_id = get_current_garage(required=True)
         response = (
-            client.table('notificaciones')
+            client.table('notifications')
             .update({'leida': True})
             .eq('id', notificacion_id)
             .eq('garage_id', garage_id)
@@ -160,7 +160,7 @@ def marcar_notificacion_leida(notificacion_id: str):
     except RuntimeError as exc:
         return jsonify({'error': str(exc)}), 403
     except Exception as exc:
-        if _is_missing_notificaciones_table_error(exc):
+        if _is_missing_notifications_table_error(exc):
             return jsonify({'data': [], 'mensaje': 'Notificaciones deshabilitadas temporalmente.'}), 200
         return jsonify({'error': str(exc)}), 500
 
@@ -175,7 +175,7 @@ def marcar_todas_leidas():
     try:
         garage_id = get_current_garage(required=True)
         response = (
-            client.table('notificaciones')
+            client.table('notifications')
             .update({'leida': True})
             .eq('garage_id', garage_id)
             .eq('leida', False)
@@ -185,6 +185,6 @@ def marcar_todas_leidas():
     except RuntimeError as exc:
         return jsonify({'error': str(exc)}), 403
     except Exception as exc:
-        if _is_missing_notificaciones_table_error(exc):
+        if _is_missing_notifications_table_error(exc):
             return jsonify({'data': [], 'mensaje': 'Notificaciones deshabilitadas temporalmente.'}), 200
         return jsonify({'error': str(exc)}), 500

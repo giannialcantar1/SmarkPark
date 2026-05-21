@@ -118,12 +118,12 @@ def _registrar_alerta_acceso(
     }
 
     try:
-        client.table('alertas_acceso').insert(payload).execute()
+        client.table('access_alerts').insert(payload).execute()
     except Exception:
         # Compatibilidad temporal si la columna `tipo` todavÃ­a no existe en Supabase.
         fallback_payload = dict(payload)
         fallback_payload.pop('tipo', None)
-        client.table('alertas_acceso').insert(fallback_payload).execute()
+        client.table('access_alerts').insert(fallback_payload).execute()
 
 def _registrar_login_fallido(email: str) -> None:
     normalized_email = (email or '').strip().lower()
@@ -633,7 +633,7 @@ def listar_alertas_acceso():
 
     try:
         response = (
-            client.table('alertas_acceso')
+            client.table('access_alerts')
             .select('*')
             .order('created_at', desc=True)
             .execute()

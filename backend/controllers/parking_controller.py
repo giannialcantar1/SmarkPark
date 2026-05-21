@@ -3,6 +3,7 @@ from __future__ import annotations
 from flask import g, jsonify, request
 
 from services import ParkingService
+from utils.pagination import get_pagination_params, paginate_items
 from utils.supabase_client import normalize_text
 
 
@@ -107,7 +108,17 @@ class ParkingController:
         return jsonify({"success": True, "message": "Espacio actualizado", "data": updated})
 
     def active_sessions(self):
-        return jsonify({"success": True, "data": self.parking_service.get_active_sessions(garage_id=g.current_user_garage_id)})
+        rows = self.parking_service.get_active_sessions(garage_id=g.current_user_garage_id)
+        pagination = get_pagination_params()
+        if not pagination["enabled"]:
+            return jsonify({"success": True, "data": rows})
+        page_rows, meta = paginate_items(rows, page=pagination["page"], page_size=pagination["page_size"])
+        return jsonify({"success": True, "data": page_rows, "meta": meta})
 
     def list_sessions(self):
-        return jsonify({"success": True, "data": self.parking_service.list_sessions(garage_id=g.current_user_garage_id)})
+        rows = self.parking_service.list_sessions(garage_id=g.current_user_garage_id)
+        pagination = get_pagination_params()
+        if not pagination["enabled"]:
+            return jsonify({"success": True, "data": rows})
+        page_rows, meta = paginate_items(rows, page=pagination["page"], page_size=pagination["page_size"])
+        return jsonify({"success": True, "data": page_rows, "meta": meta})

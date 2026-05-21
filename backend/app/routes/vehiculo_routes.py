@@ -5,6 +5,7 @@ from __future__ import annotations
 import traceback
 
 from flask import Blueprint, jsonify, request, session
+from flask_cors import cross_origin
 from postgrest.exceptions import APIError
 
 from app.authz import requires_role
@@ -158,6 +159,7 @@ def listar_vehiculos() -> tuple:
 
 
 @vehiculo_bp.route('/activos', methods=['GET'], strict_slashes=False)
+@cross_origin()
 def listar_vehiculos_activos() -> tuple:
     try:
         data = vehiculo_service.listar_activos(garage_id=get_current_garage(required=True))

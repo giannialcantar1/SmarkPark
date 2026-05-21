@@ -103,7 +103,10 @@ def update_parqueo(space_id: str):
     rows = update_rows(
         "parking_spaces",
         payload=payload,
-        filters=[{"column": "id", "value": space_id}],
+        filters=[
+            {"column": "id", "value": space_id, "optional": False},
+            {"column": "garage_id", "value": _garage(), "optional": False},
+        ],
     )
     if not rows:
         return _err("Espacio no encontrado", 404)
@@ -115,7 +118,7 @@ def update_parqueo(space_id: str):
 def delete_parqueo(space_id: str):
     """Elimina un espacio."""
     from utils.supabase_client import get_user_table_client
-    get_user_table_client(use_admin=True).table("parking_spaces").delete().eq("id", space_id).execute()
+    get_user_table_client(use_admin=True).table("parking_spaces").delete().eq("id", space_id).eq("garage_id", _garage()).execute()
     return _ok({"id": space_id})
 
 
@@ -260,7 +263,10 @@ def registrar_entrada():
     update_rows(
         "parking_spaces",
         payload={"ocupado": True, "estado": "ocupado", "status": "occupied", "updated_at": now},
-        filters=[{"column": "id", "value": espacio_id}],
+        filters=[
+            {"column": "id", "value": espacio_id, "optional": False},
+            {"column": "garage_id", "value": garage_id, "optional": False},
+        ],
     )
 
     # Buscar vehículo por placa
@@ -358,7 +364,10 @@ def registrar_salida(session_id: str):
                 "vehiculo_id": None,
                 "updated_at": now_iso,
             },
-            filters=[{"column": "id", "value": espacio_id}],
+            filters=[
+                {"column": "id", "value": espacio_id, "optional": False},
+                {"column": "garage_id", "value": garage_id, "optional": False},
+            ],
         )
 
     # Registrar pago
@@ -399,7 +408,10 @@ def liberar_espacio(space_id: str):
             "vehiculo_id": None,
             "updated_at": now,
         },
-        filters=[{"column": "id", "value": space_id}],
+        filters=[
+            {"column": "id", "value": space_id, "optional": False},
+            {"column": "garage_id", "value": _garage(), "optional": False},
+        ],
     )
     return _ok({"space_id": space_id, "status": "disponible"})
 
@@ -579,7 +591,7 @@ def get_dashboard():
 def get_notificaciones():
     garage_id = _garage()
     rows = select_rows(
-        "notificaciones",
+        "notifications",
         filters=[
             {"column": "garage_id", "value": garage_id, "optional": True},
             {"column": "user_id", "value": g.current_user_id, "optional": True},
@@ -595,7 +607,7 @@ def get_notificaciones():
 @auth_required
 def marcar_leida(notif_id: str):
     rows = update_rows(
-        "notificaciones",
+        "notifications",
         payload={"leida": True},
         filters=[{"column": "id", "value": notif_id}],
     )
@@ -613,7 +625,7 @@ def get_alertas():
         return _err("Sin permisos", 403)
     garage_id = _garage()
     rows = select_rows(
-        "alertas_acceso",
+        "access_alerts",
         filters=[{"column": "garage_id", "value": garage_id, "optional": True}],
         order_candidates=["fecha", "created_at"],
         desc=True,
