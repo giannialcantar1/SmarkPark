@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 from typing import Any
 
 import jwt
@@ -45,6 +46,20 @@ class JWTManager:
             raise ValueError(f"Se esperaba un token de tipo {expected_type}")
         return claims
 
+    def _user_from_local_claims(self, claims: dict[str, Any]):
+        metadata = {
+            "garage_id": claims.get("garage_id") or claims.get("garaje_id") or "",
+            "role": claims.get("role") or claims.get("rol") or "usuario",
+            "name": claims.get("name") or claims.get("full_name") or claims.get("email") or "Usuario",
+            "full_name": claims.get("full_name") or claims.get("name") or claims.get("email") or "Usuario",
+        }
+        return SimpleNamespace(
+            id=claims.get("sub") or claims.get("user_id") or claims.get("id"),
+            email=claims.get("email"),
+            role=claims.get("role") or claims.get("rol") or "usuario",
+            user_metadata=metadata,
+        )
+
     @staticmethod
     def _looks_like_auth_backend_error(exc: Exception) -> bool:
         message = str(exc or "").lower()
@@ -71,6 +86,15 @@ class JWTManager:
     def verify_token(self, token: str):
         if not token:
             raise ValueError("JWT requerido")
+
+        try:
+            claims = self.validate_local_token(token, expected_type="access")
+            return self._user_from_local_claims(claims)
+        except jwt.ExpiredSignatureError:
+            raise ValueError("Token invalido o expirado")
+        except jwt.InvalidTokenError:
+            pass
+
         try:
             client = get_user_table_client(use_admin=False)
             result = client.auth.get_user(token)

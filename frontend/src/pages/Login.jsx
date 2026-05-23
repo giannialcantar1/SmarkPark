@@ -74,11 +74,19 @@ export default function Login() {
       }
 
       if (token && refreshToken) {
-        const { supabase } = await import('../lib/supabase')
-        await supabase.auth.setSession({
-          access_token: token,
-          refresh_token: refreshToken,
-        })
+        try {
+          const { supabase } = await import('../lib/supabase')
+          await supabase.auth.setSession({
+            access_token: token,
+            refresh_token: refreshToken,
+          })
+        } catch {
+          // The backend session stored above is enough for API auth.
+        }
+      }
+
+      if (token && nextUser) {
+        setStoredAuth(token, nextUser)
       }
 
       const nextRoute = redirectTo || getDefaultRouteForRole(nextUser?.role, nextUser?.status || nextUser?.approval_status)

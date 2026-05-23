@@ -281,18 +281,7 @@ export default function QRAccess() {
         return
       }
 
-      if (!('BarcodeDetector' in window)) {
-        setScannerStatus('Escaneo automatico no disponible en este navegador.')
-        setScannerError('Usa la entrada manual o abre la pagina en un navegador con BarcodeDetector.')
-        return
-      }
-
       try {
-        const detector = new window.BarcodeDetector({
-          formats: ['qr_code', 'code_128', 'code_39', 'ean_13', 'upc_a'],
-        })
-        detectorRef.current = detector
-
         const stream = await navigator.mediaDevices.getUserMedia({
           video: {
             facingMode: { ideal: 'environment' },
@@ -310,8 +299,22 @@ export default function QRAccess() {
         streamRef.current = stream
         if (videoRef.current) {
           videoRef.current.srcObject = stream
-          await videoRef.current.play().catch(() => null)
+          await videoRef.current.play().catch(() => {
+            setScannerError('La camara fue concedida, pero el navegador bloqueo la reproduccion del video.')
+          })
         }
+
+        if (!('BarcodeDetector' in window)) {
+          detectorRef.current = null
+          setScannerStatus('Camara activa. Escaneo automatico no disponible en este navegador.')
+          setScannerError('Usa la entrada manual o abre la pagina en un navegador con BarcodeDetector.')
+          return
+        }
+
+        const detector = new window.BarcodeDetector({
+          formats: ['qr_code', 'code_128', 'code_39', 'ean_13', 'upc_a'],
+        })
+        detectorRef.current = detector
 
         setScannerError('')
         setScannerStatus('Camara activa. Enfoca el QR o codigo frente al lector.')

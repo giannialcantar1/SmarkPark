@@ -26,6 +26,7 @@ class AuthController:
             user = result.get("user", {})
             user_id = user.get("id")
             token = result.get("token") or result.get("access_token")
+            refresh_token = result.get("refresh_token")
 
             if not token and user_id:
                 token = generate_jwt_token({
@@ -38,6 +39,10 @@ class AuthController:
                 "success": True,
                 "message": "Login exitoso",
                 "token": token,
+                "access_token": token,
+                "refresh_token": refresh_token,
+                "token_type": result.get("token_type") or "bearer",
+                "expires_in": result.get("expires_in"),
                 "user": {
                     "id": user.get("id"),
                     "email": user.get("email"),

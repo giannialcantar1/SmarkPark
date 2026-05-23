@@ -46,8 +46,17 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(() => getStoredUser())
   const [loading, setLoading] = useState(true)
 
-  const syncSession = useCallback(async (nextSession) => {
+  const syncSession = useCallback(async (nextSession, { preserveStoredAuth = false } = {}) => {
     if (!nextSession?.access_token || !nextSession?.user) {
+      const storedToken = getStoredToken()
+      const storedUser = getStoredUser()
+
+      if (preserveStoredAuth && storedToken && storedUser) {
+        setSession(null)
+        setUser(storedUser)
+        return storedUser
+      }
+
       clearStoredAuth()
       setSession(null)
       setUser(null)
@@ -96,15 +105,15 @@ export function AuthProvider({ children }) {
     const initialize = async () => {
       const { data } = await supabase.auth.getSession()
       if (!active) return
-      await syncSession(data.session ?? null)
+      await syncSession(data.session ?? null, { preserveStoredAuth: true })
       if (active) setLoading(false)
     }
 
     initialize()
 
-    const { data: listener } = supabase.auth.onAuthStateChange(async (_event, nextSession) => {
+    const { data: listener } = supabase.auth.onAuthStateChange(async (event, nextSession) => {
       if (!active) return
-      await syncSession(nextSession ?? null)
+      await syncSession(nextSession ?? null, { preserveStoredAuth: event !== 'SIGNED_OUT' })
       if (active) setLoading(false)
     })
 

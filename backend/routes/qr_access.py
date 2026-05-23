@@ -47,6 +47,14 @@ def _vehicle_payload(vehicle: dict | None) -> dict:
     }
 
 
+def _vehicle_matches_code(vehicle: dict, access_code: str) -> bool:
+    wanted = normalize_text(access_code)
+    for key in ("placa", "plate", "codigo", "code", "access_code", "qr_code", "codigo_acceso"):
+        if normalize_text(vehicle.get(key)) == wanted:
+            return True
+    return False
+
+
 def _extract_code_from_text(raw_value: str) -> str:
     text = str(raw_value or "").strip()
     if not text:
@@ -173,7 +181,18 @@ def verify_qr_access():
         selected_active_session = active_session
         break
 
-    if not selected_code or not selected_vehicle:
+    if not selected_vehicle:
+        for vehicle in vehicles_by_id.values():
+            if not _vehicle_matches_code(vehicle, access_code):
+                continue
+
+            selected_vehicle = vehicle
+            selected_active_session = active_by_vehicle_id.get(str(vehicle.get("id") or ""))
+            if not selected_active_session:
+                selected_active_session = active_by_plate.get(normalize_text(vehicle.get("placa") or vehicle.get("plate")))
+            break
+
+    if not selected_vehicle:
         return _build_denied_response("Codigo o QR invalido para este garage.", access_code)
 
     vehicle_payload = _vehicle_payload(selected_vehicle)
@@ -187,11 +206,12 @@ def verify_qr_access():
                 payment_method="qr_access",
                 payment_reference=access_code,
             )
-            update_rows(
-                ACCESS_CODES_TABLE,
-                payload={"used_at": utcnow_iso()},
-                filters=[{"column": "id", "value": selected_code.get("id"), "optional": False}],
-            )
+            if selected_code:
+                update_rows(
+                    ACCESS_CODES_TABLE,
+                    payload={"used_at": utcnow_iso()},
+                    filters=[{"column": "id", "value": selected_code.get("id"), "optional": False}],
+                )
             space_payload = (
                 {
                     "id": selected_active_session.get("space_id") or selected_active_session.get("espacio_id"),
@@ -217,6 +237,12 @@ def verify_qr_access():
             )
             space_payload = result.get("space")
             message = "Entrada registrada. Acceso autorizado."
+            if selected_code:
+                update_rows(
+                    ACCESS_CODES_TABLE,
+                    payload={"used_at": utcnow_iso()},
+                    filters=[{"column": "id", "value": selected_code.get("id"), "optional": False}],
+                )
     except ValueError as exc:
         return _build_denied_response(str(exc), access_code)
     except Exception as exc:

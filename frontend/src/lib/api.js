@@ -691,6 +691,7 @@ function invalidateByMutation(path) {
 
 function shouldClearStoredAuthOn401(path, payload) {
   if (path !== '/api/auth/me') return false
+  if (getStoredUser()) return false
 
   const message = String(payload?.error ?? payload?.mensaje ?? payload?.message ?? '').toLowerCase()
   return (
@@ -719,7 +720,7 @@ async function apiFetch(path, options = {}) {
   let finalPath = backendPath
   if (path === '/api/vehiculos/activos' && garageId) {
     finalPath = `/api/vehicles/garage/${garageId}/active`
-  } else if ((path === '/api/vehiculos' || path === '/api/vehiculos/') && garageId) {
+  } else if ((path === '/api/vehiculos' || path === '/api/vehiculos/' || path === '/api/vehicles') && garageId) {
     finalPath = `/api/vehicles/garage/${garageId}`
   }
 

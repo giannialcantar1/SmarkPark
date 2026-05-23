@@ -103,6 +103,11 @@ function getStoredGarageId() {
   return ''
 }
 
+function getGarageScopedPath(path, fallbackPath) {
+  const garageId = getStoredGarageId()
+  return garageId ? path.replace(':garageId', encodeURIComponent(garageId)) : fallbackPath
+}
+
 export function setStoredAuth(token, user) {
   if (!isBrowser()) return
   const normalizedUser = normalizeUser(user)
@@ -160,8 +165,11 @@ async function getAuthTokenForRequest({ token, requiresAuth }) {
   if (!requiresAuth) return token || ''
   if (token) return token
 
+  const storedToken = getStoredToken()
+  if (storedToken) return storedToken
+
   const freshToken = await bestEffort(getFreshSessionToken, '')
-  return freshToken || getStoredToken()
+  return freshToken || ''
 }
 
 export async function getFreshAuthToken() {
@@ -351,7 +359,7 @@ export async function getParkingSpaces() {
 }
 
 export async function getVehicles() {
-  const payload = await apiRequest('/api/vehicles')
+  const payload = await apiRequest(getGarageScopedPath('/api/vehicles/garage/:garageId', '/api/vehicles'))
   return payload?.data ?? []
 }
 
