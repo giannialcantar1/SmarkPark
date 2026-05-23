@@ -20,6 +20,7 @@ from utils.supabase_client import (
     get_user_role,
     get_user_table_client,
     insert_row,
+    insert_rows,
     normalize_text,
     select_rows,
     utcnow_iso,
@@ -243,12 +244,10 @@ class AuthService:
                 }
             )
 
-        for row in rows:
-            try:
-                insert_row("parking_spaces", row)
-            except Exception as exc:
-                print(f"[PARKING_SPACES SEED ERROR] {exc}")
-                break
+        try:
+            insert_rows("parking_spaces", rows)
+        except Exception as exc:
+            print(f"[PARKING_SPACES SEED ERROR] {exc}")
 
     def _resolve_garage_by_code(self, garage_code: str) -> dict:
         normalized_code = normalize_text(garage_code)

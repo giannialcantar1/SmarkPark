@@ -201,10 +201,19 @@ def login_post() -> tuple[dict[str, Any], int]:
         return (
             {
                 'mensaje': 'Inicio de sesion exitoso',
+                'token': result.get('access_token'),
+                'refresh_token': result.get('refresh_token'),
                 'user_id': user_id,
                 'email': session['email'],
                 'role': session['role'],
                 'garage_id': session.get('garage_id'),
+                'user': {
+                    'id': user_id,
+                    'user_id': user_id,
+                    'email': session['email'],
+                    'role': session['role'],
+                    'garage_id': session.get('garage_id'),
+                },
             },
             200,
         )

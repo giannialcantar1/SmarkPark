@@ -7,7 +7,6 @@ import './auth.css'
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const PASSWORD_MIN = 6
-const PASSWORD_MAX = 8
 
 export default function Login() {
   const navigate = useNavigate()
@@ -52,17 +51,23 @@ export default function Login() {
       return
     }
 
-    if (form.password.length < PASSWORD_MIN || form.password.length > PASSWORD_MAX) {
-      setError('La contrasena debe tener entre 6 y 8 caracteres.')
+    if (form.password.length < PASSWORD_MIN) {
+      setError('La contrasena debe tener al menos 6 caracteres.')
       setSubmitting(false)
       return
     }
 
     try {
       const result = await loginRequest(form.email, form.password)
-      const token = String(result?.token || '').trim()
+      const token = String(result?.access_token || result?.token || '').trim()
       const refreshToken = String(result?.refresh_token || '').trim()
-      const nextUser = result?.user || null
+      const nextUser = result?.user || {
+        id: result?.user_id || null,
+        user_id: result?.user_id || null,
+        email: result?.email || form.email,
+        role: result?.role,
+        garage_id: result?.garage_id,
+      }
 
       if (token && nextUser) {
         setStoredAuth(token, nextUser)
@@ -76,7 +81,7 @@ export default function Login() {
         })
       }
 
-      const nextRoute = redirectTo || getDefaultRouteForRole(result?.user?.role)
+      const nextRoute = redirectTo || getDefaultRouteForRole(nextUser?.role, nextUser?.status || nextUser?.approval_status)
       navigate(nextRoute, { replace: true })
     } catch (err) {
       setError(err.message || 'Credenciales incorrectas.')
@@ -170,11 +175,10 @@ export default function Login() {
                   id="login-password"
                   type={showPassword ? 'text' : 'password'}
                   name="password"
-                  placeholder="De 6 a 8 caracteres"
+                  placeholder="Minimo 6 caracteres"
                   value={form.password}
                   onChange={(event) => setForm({ ...form, password: event.target.value })}
                   minLength={PASSWORD_MIN}
-                  maxLength={PASSWORD_MAX}
                   required
                 />
                 <button

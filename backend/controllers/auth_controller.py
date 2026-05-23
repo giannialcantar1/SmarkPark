@@ -67,10 +67,10 @@ class AuthController:
             print("=" * 60 + "\n")
 
             error_msg = str(exc).lower()
+            is_email_unconfirmed = "email not confirmed" in error_msg
             is_bad_credentials = any(token in error_msg for token in [
                 "invalid login credentials",
                 "invalid email or password",
-                "email not confirmed",
                 "user not found",
             ])
             is_config_error = any(token in error_msg for token in [
@@ -104,6 +104,12 @@ class AuthController:
                 )
             except Exception:
                 pass
+
+            if is_email_unconfirmed:
+                return jsonify({
+                    "success": False,
+                    "error": "Tu cuenta aun no ha sido verificada. Completa la verificacion e intenta nuevamente.",
+                }), 403
 
             if is_bad_credentials:
                 return jsonify({"success": False, "error": "Correo o contrasena incorrectos."}), 401

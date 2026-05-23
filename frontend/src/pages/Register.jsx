@@ -57,7 +57,6 @@ export default function Register() {
   const copyResetRef = useRef(null)
   const forceAccess = new URLSearchParams(location.search).get('force') === '1'
   const PASSWORD_MIN = 6
-  const PASSWORD_MAX = 8
 
   const handleMouseMove = (event) => {
     if (!panelRef.current) return
@@ -120,8 +119,8 @@ export default function Register() {
       return
     }
 
-    if (password.length < PASSWORD_MIN || password.length > PASSWORD_MAX) {
-      setError('La contrasena debe tener entre 6 y 8 caracteres.')
+    if (password.length < PASSWORD_MIN) {
+      setError('La contrasena debe tener al menos 6 caracteres.')
       setSubmitting(false)
       return
     }
@@ -368,9 +367,8 @@ export default function Register() {
                   id="reg-password"
                   name="password"
                   type={showPassword ? 'text' : 'password'}
-                  placeholder="De 6 a 8 caracteres"
+                  placeholder="Minimo 6 caracteres"
                   minLength={PASSWORD_MIN}
-                  maxLength={PASSWORD_MAX}
                   value={form.password}
                   onChange={(event) => setForm({ ...form, password: event.target.value })}
                   required
@@ -398,7 +396,6 @@ export default function Register() {
                   type={showConfirmPassword ? 'text' : 'password'}
                   placeholder="Repite tu password"
                   minLength={PASSWORD_MIN}
-                  maxLength={PASSWORD_MAX}
                   value={form.confirm_password}
                   onChange={(event) => setForm({ ...form, confirm_password: event.target.value })}
                   required

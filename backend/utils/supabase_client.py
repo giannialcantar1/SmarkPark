@@ -269,6 +269,27 @@ def insert_row(table_name: str, payload: dict[str, Any]) -> dict[str, Any]:
             raise
 
 
+def insert_rows(table_name: str, payloads: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    current_payloads = [{key: value for key, value in payload.items() if value is not None} for payload in payloads]
+    if not current_payloads:
+        return []
+
+    while True:
+        try:
+            response = get_user_table_client(use_admin=True).table(table_name).insert(current_payloads).execute()
+            return response.data or current_payloads
+        except APIError as exc:
+            missing_table = _extract_missing_table(exc)
+            if missing_table == table_name:
+                return current_payloads
+            missing_column = _extract_missing_column(exc, table_name)
+            if missing_column and any(missing_column in payload for payload in current_payloads):
+                for payload in current_payloads:
+                    payload.pop(missing_column, None)
+                continue
+            raise
+
+
 def update_rows(table_name: str, *, payload: dict[str, Any], filters: list[dict]) -> list[dict]:
     current_payload = dict(payload)
     query_filters = _clone_filters(filters)

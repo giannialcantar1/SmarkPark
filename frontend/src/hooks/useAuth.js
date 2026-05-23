@@ -68,16 +68,17 @@ export function AuthProvider({ children }) {
         skipAuthRedirect: true,
       })
 
+      const profileUser = profile?.user || profile
       const mergedUser = normalizeUser({
         ...fallbackUser,
-        ...profile,
+        ...profileUser,
         user_metadata: {
           ...(nextSession.user.user_metadata || {}),
-          role: profile?.role || fallbackUser?.role,
-          garage_id: profile?.garage_id || fallbackUser?.garage_id,
-          approval_status: profile?.approval_status || profile?.status || fallbackUser?.approval_status || '',
-          name: profile?.name || fallbackUser?.name,
-          full_name: profile?.name || fallbackUser?.full_name,
+          role: profileUser?.role || fallbackUser?.role,
+          garage_id: profileUser?.garage_id || fallbackUser?.garage_id,
+          approval_status: profileUser?.approval_status || profileUser?.status || fallbackUser?.approval_status || '',
+          name: profileUser?.name || fallbackUser?.name,
+          full_name: profileUser?.name || fallbackUser?.full_name,
         },
       })
 
