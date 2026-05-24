@@ -33,8 +33,8 @@ function invoiceNumber() {
 
 /* ─── PDF builder ─────────────────────────────────────────────────────── */
 function buildPDF({ placa, minutes, amount, facNum, fecha }) {
-  const itbisRate = 0.18
-  const subtotal = amount / (1 + itbisRate)
+  const itbisRate = 0
+  const subtotal = amount
   const itbis = amount - subtotal
   const horasBilled = Math.max(1, Math.ceil(minutes / 60))
   const tarifaHora = subtotal / horasBilled
@@ -151,7 +151,7 @@ function buildPDF({ placa, minutes, amount, facNum, fecha }) {
     <div class="totals">
       <div class="totals-box">
         <div class="total-row"><span>Subtotal</span><span>${formatMoney(subtotal)}</span></div>
-        <div class="total-row"><span>ITBIS (18%)</span><span>${formatMoney(itbis)}</span></div>
+        <div class="total-row"><span>ITBIS</span><span>${formatMoney(itbis)}</span></div>
         <div class="total-final">
           <div><div class="total-lbl">Total pagado</div></div>
           <div class="total-val">${formatMoney(amount)}</div>
@@ -305,9 +305,9 @@ export default function ModalExit({ isOpen, onClose, onSuccess, initialPlate = '
     setTimeout(() => onClose?.(), 600)
   }
 
-  const itbisRate = 0.18
+  const itbisRate = 0
   const rawAmount = Number(result?.amount_to_pay || 0)
-  const subtotal  = rawAmount / (1 + itbisRate)
+  const subtotal  = rawAmount
   const itbis     = rawAmount - subtotal
 
   return (
@@ -451,8 +451,8 @@ export default function ModalExit({ isOpen, onClose, onSuccess, initialPlate = '
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 16 }}>
                   {[
                     { icon: '⏱', label: 'Tiempo estacionado', val: formatDuration(result.duration_minutes) },
-                    { icon: '🧮', label: 'Subtotal (sin ITBIS)', val: formatMoney(subtotal) },
-                    { icon: '📋', label: 'ITBIS (18%)',         val: formatMoney(itbis) },
+                    { icon: '🧮', label: 'Subtotal', val: formatMoney(subtotal) },
+                    { icon: '📋', label: 'ITBIS',    val: formatMoney(itbis) },
                   ].map(({ icon, label, val }) => (
                     <div key={label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '9px 12px', background: 'rgba(255,255,255,.03)', borderRadius: 9 }}>
                       <span style={{ fontSize: 13, color: C.dim }}>{icon} {label}</span>
@@ -465,7 +465,7 @@ export default function ModalExit({ isOpen, onClose, onSuccess, initialPlate = '
                   <div>
                     <div style={{ fontSize: 11, color: 'rgba(255,255,255,.75)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.08em', marginBottom: 4 }}>Total cobrado</div>
                     <div style={{ fontSize: 34, fontWeight: 900, color: '#fff', letterSpacing: '-.5px', lineHeight: 1 }}>{formatMoney(rawAmount)}</div>
-                    <div style={{ fontSize: 10, color: 'rgba(255,255,255,.6)', marginTop: 4 }}>ITBIS incluido · PDF se genera al presionar "Imprimir Factura"</div>
+                    <div style={{ fontSize: 10, color: 'rgba(255,255,255,.6)', marginTop: 4 }}>Sin ITBIS adicional · PDF se genera al presionar "Imprimir Factura"</div>
                   </div>
                   <div style={{ width: 54, height: 54, background: 'rgba(255,255,255,.2)', borderRadius: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 28 }}>🧾</div>
                 </div>

@@ -1,14 +1,17 @@
 from __future__ import annotations
 
-from flask import g, jsonify, request
+from io import BytesIO
 
-from services import PaymentService
+from flask import g, jsonify, request, send_file
+
+from services import InvoiceService, PaymentService
 from utils.pagination import get_pagination_params, paginate_items
 
 
 class PaymentController:
     def __init__(self) -> None:
         self.payment_service = PaymentService()
+        self.invoice_service = InvoiceService()
 
     def process(self):
         payload = request.get_json(silent=True) or {}
@@ -41,7 +44,13 @@ class PaymentController:
         if not self.payment_service.session_belongs_to_garage(garage_id=g.current_user_garage_id, session_id=session_id):
             return jsonify({"success": False, "error": "Sesion no encontrada"}), 404
 
-        invoice = self.payment_service.get_invoice(session_id=session_id)
-        if not invoice:
+        pdf_bytes = self.invoice_service.generate_invoice_pdf(session_id=session_id)
+        if not pdf_bytes:
             return jsonify({"success": False, "error": "Recibo no encontrado"}), 404
-        return jsonify({"success": True, "data": invoice})
+
+        return send_file(
+            BytesIO(pdf_bytes),
+            mimetype="application/pdf",
+            as_attachment=True,
+            download_name=f"factura-{session_id}.pdf",
+        )

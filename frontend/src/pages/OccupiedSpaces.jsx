@@ -5,12 +5,6 @@ import { apiGet, getCachedApiData } from '../lib/api'
 
 const ModalEntry = lazy(() => import('../components/ModalEntry'))
 
-const TARIFAS = [
-  { label: 'Fracción (15 min)', value: 'RD$ 5.00' },
-  { label: 'Hora completa',     value: 'RD$ 15.00' },
-  { label: 'Día completo (12h+)', value: 'RD$ 120.00' },
-]
-
 const formatSince = (value) => {
   if (!value) return 'Sin hora registrada'
   const start = new Date(value)
@@ -21,16 +15,16 @@ const formatSince = (value) => {
   return `${hours}h ${String(minutes).padStart(2, '0')}m`
 }
 
-const calculateCost = (value) => {
+const formatCurrency = (value) =>
+  new Intl.NumberFormat('es-DO', { style: 'currency', currency: 'DOP', minimumFractionDigits: 2 }).format(Number(value || 0))
+
+const calculateCost = (value, hourlyRate) => {
   if (!value) return 'RD$ 0.00'
   const start = new Date(value)
   if (Number.isNaN(start.getTime())) return 'RD$ 0.00'
   const totalMinutes = Math.max(0, Math.floor((Date.now() - start.getTime()) / 60000))
-  if (totalMinutes <= 15) return 'RD$ 5.00'
-  if (totalMinutes <= 60) return 'RD$ 15.00'
-  const blocks = Math.ceil(totalMinutes / 60)
-  const total = blocks >= 12 ? 120 : blocks * 15
-  return new Intl.NumberFormat('es-DO', { style: 'currency', currency: 'DOP', minimumFractionDigits: 2 }).format(total)
+  const billedHours = Math.max(1, Math.ceil(totalMinutes / 60))
+  return formatCurrency(billedHours * Number(hourlyRate || 0))
 }
 
 const normalizeSpace = (space = {}) => ({
@@ -142,10 +136,12 @@ const Icon = ({ name, size = 18 }) => (
 export default function OccupiedSpaces() {
   const cachedSpaces   = getCachedApiData('/api/parking-spaces')
   const cachedVehicles = getCachedApiData('/api/vehiculos')
+  const cachedSettings = getCachedApiData('/api/auth/settings')
   const cachedOccupancyData = cachedSpaces && cachedVehicles ? buildOccupancyData(cachedSpaces, cachedVehicles) : null
 
   const [spaces, setSpaces]                   = useState(cachedOccupancyData?.mergedSpaces || [])
   const [occupancyBySpace, setOccupancyBySpace] = useState(cachedOccupancyData?.occupancy || new Map())
+  const [hourlyRate, setHourlyRate] = useState(() => Number(cachedSettings?.data?.hourly_rate || 50) || 50)
   const [loading, setLoading]   = useState(!cachedOccupancyData)
   const [error, setError]       = useState(null)
   const [nivelActivo, setNivelActivo] = useState('Todos')
@@ -162,6 +158,9 @@ export default function OccupiedSpaces() {
       const { mergedSpaces, occupancy } = buildOccupancyData(sp, vp)
       setSpaces(mergedSpaces)
       setOccupancyBySpace(occupancy)
+      apiGet('/api/auth/settings', { forceFresh })
+        .then((settings) => setHourlyRate(Number(settings?.data?.hourly_rate || 50) || 50))
+        .catch(() => null)
     } catch (err) {
       setError(err.message || 'No se pudieron cargar los espacios.')
       setSpaces([])
@@ -200,10 +199,10 @@ export default function OccupiedSpaces() {
           color: v.color || '',
           propietario: v.propietario || 'Sin propietario',
           since: formatSince(v.horaEntrada),
-          cost: calculateCost(v.horaEntrada),
+          cost: calculateCost(v.horaEntrada, hourlyRate),
         }
       }),
-    [occupancyBySpace, spaces],
+    [occupancyBySpace, spaces, hourlyRate],
   )
 
   const niveles = useMemo(() => {
@@ -372,13 +371,13 @@ export default function OccupiedSpaces() {
               <h2 style={s.sideCardTitle}>Tarifas vigentes</h2>
             </div>
             <div style={s.sideCardBody}>
-              {TARIFAS.map((t, i) => (
-                <div key={t.label} style={{ ...s.tarifaRow, borderBottom: i === TARIFAS.length - 1 ? 'none' : `1px solid ${C.border}` }}>
-                  <span style={s.tarifaLabel}>{t.label}</span>
-                  <strong style={s.tarifaVal}>{t.value}</strong>
+              {[['Tarifa por hora', `${formatCurrency(hourlyRate)}/hr`], ['Horas cobrables', 'Redondeo por hora iniciada']].map(([label, value], i, rows) => (
+                <div key={label} style={{ ...s.tarifaRow, borderBottom: i === rows.length - 1 ? 'none' : `1px solid ${C.border}` }}>
+                  <span style={s.tarifaLabel}>{label}</span>
+                  <strong style={s.tarifaVal}>{value}</strong>
                 </div>
               ))}
-              <p style={s.tarifaNote}>* Precios referenciales. El cobro real se gestiona desde el módulo de Cobros.</p>
+              <p style={s.tarifaNote}>* Misma tarifa usada en Cobros y al registrar la salida.</p>
             </div>
           </div>
 

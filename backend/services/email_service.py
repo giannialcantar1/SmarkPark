@@ -2,9 +2,14 @@ from __future__ import annotations
 
 import smtplib
 from email.message import EmailMessage
+from mimetypes import guess_type
+import re
 from typing import Any
 
 from config import Config
+
+
+EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
 class EmailService:
@@ -19,6 +24,10 @@ class EmailService:
     def is_configured(self) -> bool:
         return bool(self.host and self.sender)
 
+    @staticmethod
+    def is_valid_email(email: str) -> bool:
+        return bool(EMAIL_RE.fullmatch(str(email or "").strip()))
+
     def send_email(
         self,
         *,
@@ -26,7 +35,18 @@ class EmailService:
         subject: str,
         body: str,
         html: str | None = None,
+        attachments: list[tuple[str, bytes]] | None = None,
     ) -> dict[str, Any]:
+        to_email = str(to_email or "").strip().lower()
+        if not self.is_valid_email(to_email):
+            return {
+                "success": False,
+                "sent": False,
+                "reason": "invalid_recipient_email",
+                "to": to_email,
+                "subject": subject,
+            }
+
         if not self.is_configured():
             return {
                 "success": False,
@@ -43,6 +63,10 @@ class EmailService:
         message.set_content(body)
         if html:
             message.add_alternative(html, subtype="html")
+        for filename, content in attachments or []:
+            mime_type, _ = guess_type(filename)
+            maintype, subtype = (mime_type or "application/octet-stream").split("/", 1)
+            message.add_attachment(content, maintype=maintype, subtype=subtype, filename=filename)
 
         try:
             with smtplib.SMTP(self.host, self.port, timeout=20) as server:

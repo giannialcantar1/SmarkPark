@@ -1,6 +1,7 @@
 from .alert_service import AlertService
 from .auth_service import AuthService
 from .email_service import EmailService
+from .invoice_service import InvoiceService
 from .notification_service import NotificationService
 from .monthly_plan_service import MonthlyPlanService
 from .parking_service import ParkingService
@@ -14,6 +15,7 @@ __all__ = [
     "AlertService",
     "AuthService",
     "EmailService",
+    "InvoiceService",
     "NotificationService",
     "MonthlyPlanService",
     "ParkingService",

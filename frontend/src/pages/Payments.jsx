@@ -5,7 +5,7 @@ import { DEFAULT_PAGE_SIZE, apiGet, apiPost, buildPaginatedPath, getCachedApiDat
 import CreditCardPreview from '../components/PaymentModal/CreditCardPreview'
 import paymentUi from '../components/PaymentModal/PaymentModal.module.css'
 
-const ITBIS_RATE = 0.18
+const ITBIS_RATE = 0
 const PAGE_SIZE = DEFAULT_PAGE_SIZE
 const EMPTY_CARD = {
   number: '',
@@ -308,7 +308,7 @@ function buildPrintableInvoice(invoice) {
     <div class="totals">
       <div class="totals-box">
         <div class="total-row"><span>Subtotal</span><span>${invoice.subtotal}</span></div>
-        <div class="total-row"><span>ITBIS (18%)</span><span>${invoice.itbis}</span></div>
+        <div class="total-row"><span>ITBIS</span><span>${invoice.itbis}</span></div>
         <div class="total-final">
           <div><div class="total-final-label">Total pagado</div></div>
           <div class="total-final-value">${invoice.total}</div>
@@ -1019,7 +1019,7 @@ export default function Cobros() {
     const mins = Math.max(0, Math.floor((Date.now() - entry.getTime()) / 60000))
     const billed = getBillableHours(mins)
     const subtotal = billed * hourlyRate
-    return formatCurrency(subtotal + subtotal * ITBIS_RATE)
+    return formatCurrency(subtotal)
   }
 
   return (
@@ -1125,7 +1125,7 @@ export default function Cobros() {
                 <div style={s.metaItem}><div style={s.metaLabel}>Entrada</div><div style={{ ...s.metaVal, fontSize: 11 }}>{formatDateTime(vehicle.hora_entrada || vehicle.entry_time)}</div></div>
               </div>
               <div style={s.cardCostRow}>
-                <div><div style={s.costLabel}>Costo estimado (c/ITBIS)</div><div style={s.costVal}>{liveCost}</div></div>
+                <div><div style={s.costLabel}>Costo estimado</div><div style={s.costVal}>{liveCost}</div></div>
               </div>
               <div style={s.cardActions}>
                 <button type="button" style={s.btnSecondary} onClick={(e) => { e.stopPropagation(); setSelectedVehicle(vehicle) }}>
@@ -1196,7 +1196,7 @@ export default function Cobros() {
             <div style={s.divider} />
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, fontSize: 13, color: C.textSoft, marginBottom: 8 }}>
               <span>Subtotal: <strong style={{ color: '#fff' }}>{invoicePreview.subtotal}</strong></span>
-              <span>ITBIS 18%: <strong style={{ color: '#fff' }}>{invoicePreview.itbis}</strong></span>
+              <span>ITBIS: <strong style={{ color: '#fff' }}>{invoicePreview.itbis}</strong></span>
             </div>
             <div style={s.totalBox}>
               <div style={s.totalLabel}>Total a pagar</div>
@@ -1309,7 +1309,7 @@ export default function Cobros() {
                   <span style={s.receiptTaxVal}>{confirmInvoice.subtotal}</span>
                 </div>
                 <div style={s.receiptTaxRow}>
-                  <span style={s.receiptTaxLabel}>ITBIS (18%)</span>
+                  <span style={s.receiptTaxLabel}>ITBIS</span>
                   <span style={s.receiptTaxVal}>{confirmInvoice.itbis}</span>
                 </div>
               </div>
@@ -1319,7 +1319,7 @@ export default function Cobros() {
                 <div>
                   <div style={s.receiptTotalLabel}>Total a cobrar</div>
                   <div style={s.receiptTotalAmt}>{confirmInvoice.total}</div>
-                  <div style={s.receiptTotalNote}>Incluye ITBIS · PDF se genera al confirmar</div>
+                  <div style={s.receiptTotalNote}>Sin ITBIS adicional · PDF se genera al confirmar</div>
                 </div>
                 <div style={{
                   width: 52, height: 52,

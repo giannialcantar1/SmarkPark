@@ -35,14 +35,12 @@ const formatDuration = (value) => {
   return `${hours}h ${String(minutes).padStart(2, '0')}m`
 }
 
-const formatCurrentCost = (value) => {
+const formatCurrentCost = (value, hourlyRate) => {
   const start = parseDate(value)
   if (!start) return formatCurrency(0)
   const totalMinutes = Math.max(0, Math.floor((Date.now() - start.getTime()) / 60000))
-  if (totalMinutes <= 15) return formatCurrency(5)
-  if (totalMinutes <= 60) return formatCurrency(15)
-  const billedHours = Math.min(12, Math.ceil(totalMinutes / 60))
-  return formatCurrency(billedHours >= 12 ? 120 : billedHours * 15)
+  const billedHours = Math.max(1, Math.ceil(totalMinutes / 60))
+  return formatCurrency(billedHours * Number(hourlyRate || 0))
 }
 
 const normalizeSpace = (space = {}) => ({
@@ -110,10 +108,12 @@ export default function LiberarParqueos() {
 
   const cachedVehicles = getCachedApiData('/api/vehiculos')
   const cachedSpaces   = getCachedApiData('/api/parking-spaces')
+  const cachedSettings = getCachedApiData('/api/auth/settings')
   const hasCache = Boolean(cachedVehicles && cachedSpaces)
 
   const [vehiculos, setVehiculos] = useState(() => cachedVehicles?.data || [])
   const [parqueos, setParqueos]   = useState(() => cachedSpaces?.data  || [])
+  const [hourlyRate, setHourlyRate] = useState(() => Number(cachedSettings?.data?.hourly_rate || 50) || 50)
   const [loading, setLoading]     = useState(() => !hasCache)
   const [error, setError]         = useState('')
   const [search, setSearch]       = useState('')
@@ -128,6 +128,9 @@ export default function LiberarParqueos() {
       ])
       setVehiculos(Array.isArray(vp?.data) ? vp.data : [])
       setParqueos(Array.isArray(pp?.data) ? pp.data : [])
+      apiGet('/api/auth/settings', { forceFresh: true })
+        .then((settings) => setHourlyRate(Number(settings?.data?.hourly_rate || 50) || 50))
+        .catch(() => null)
     } catch (err) {
       setError(err.message || 'No se pudieron cargar las liberaciones.')
     } finally {
@@ -158,7 +161,7 @@ export default function LiberarParqueos() {
           floor: space?.floor || '',
           location: space?.label || v.rawLocation || 'Sin espacio',
           duration: formatDuration(v.entry),
-          cost: formatCurrentCost(v.entry),
+          cost: formatCurrentCost(v.entry, hourlyRate),
         }
       })
       .filter((v) => {
@@ -166,7 +169,7 @@ export default function LiberarParqueos() {
         const term = search.toLowerCase()
         return [v.placa, v.modelo, v.propietario, v.location].join(' ').toLowerCase().includes(term)
       })
-  }, [vehiculos, parqueos, search])
+  }, [vehiculos, parqueos, search, hourlyRate])
 
   const occupiedSpaces  = useMemo(() => (parqueos || []).map(normalizeSpace).filter((s) => s.occupied).length, [parqueos])
   const totalSpaces     = Array.isArray(parqueos) ? parqueos.length : 0
@@ -264,7 +267,7 @@ export default function LiberarParqueos() {
         <aside style={styles.sideCard}>
           <h2 style={styles.sideTitle}>Tarifas vigentes</h2>
           <div style={{ marginTop: 14 }}>
-            {[['Fracción (15 min)', 'RD$ 5.00'], ['Hora completa', 'RD$ 15.00'], ['Día completo (12h+)', 'RD$ 120.00']].map(([label, value]) => (
+            {[['Tarifa por hora', `${formatCurrency(hourlyRate)}/hr`], ['Horas cobrables', 'Redondeo por hora iniciada']].map(([label, value]) => (
               <div key={label} style={styles.rateRow}>
                 <span style={{ color: C.dim }}>{label}</span>
                 <strong>{value}</strong>
