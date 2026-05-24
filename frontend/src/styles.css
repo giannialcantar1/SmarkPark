@@ -1212,13 +1212,25 @@ h3 {
 }
 
 .dashboard-pro__space--occupied {
-  background: linear-gradient(180deg, rgba(17, 74, 103, 0.78), rgba(12, 56, 79, 0.88));
-  border-color: rgba(50, 201, 255, 0.28);
+  background: linear-gradient(180deg, rgba(248, 81, 73, 0.14), rgba(127, 29, 29, 0.24));
+  border-color: rgba(248, 81, 73, 0.42);
+  color: #f85149;
+}
+
+.dashboard-pro__space--occupied strong,
+.dashboard-pro__space--occupied span {
+  color: #f85149;
 }
 
 .dashboard-pro__space--available {
-  background: linear-gradient(180deg, rgba(30, 40, 63, 0.84), rgba(21, 30, 48, 0.92));
-  border-color: rgba(84, 138, 201, 0.16);
+  background: linear-gradient(180deg, rgba(63, 185, 80, 0.12), rgba(22, 101, 52, 0.18));
+  border-color: rgba(63, 185, 80, 0.35);
+  color: #3fb950;
+}
+
+.dashboard-pro__space--available strong,
+.dashboard-pro__space--available span {
+  color: #3fb950;
 }
 
 .dashboard-pro__legend {
@@ -1243,11 +1255,11 @@ h3 {
 }
 
 .dashboard-pro__legend .is-occupied {
-  background: #13c7f6;
+  background: #f85149;
 }
 
 .dashboard-pro__legend .is-available {
-  background: #34415a;
+  background: #3fb950;
 }
 
 .dashboard-pro__floors {

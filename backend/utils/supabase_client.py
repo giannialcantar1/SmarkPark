@@ -633,15 +633,13 @@ def normalize_parking_space(row: dict[str, Any]) -> dict[str, Any]:
             floor = match.group(1).upper()
     occupied_flag = row.get("ocupado")
     raw_status = _first_present(row, "status", "estado", default="available")
-    status = normalize_text(raw_status)
-    if occupied_flag is True:
+    normalized_status = normalize_text(raw_status)
+    if occupied_flag is True or normalized_status in {"ocupado", "occupied", "busy"}:
         status = "occupied"
-    elif occupied_flag is False:
+    elif occupied_flag is False or normalized_status in {"disponible", "available", "free", ""}:
         status = "available"
-    elif status in {"ocupado", "busy"}:
-        status = "occupied"
-    elif status in {"disponible", "free", ""}:
-        status = "available"
+    else:
+        status = normalized_status or "available"
     occupied = status == "occupied"
     estado = "ocupado" if occupied else "disponible"
 

@@ -56,9 +56,15 @@ def _garage_spaces_index() -> dict[str, dict]:
 def _set_space_status(space_id: str | None, status: str) -> None:
     if not space_id:
         return
+    occupied = normalize_text(status) in {"ocupado", "occupied", "busy"}
     update_rows(
         "parking_spaces",
-        payload={"estado": status, "status": status},
+        payload={
+            "ocupado": occupied,
+            "occupied": occupied,
+            "estado": "ocupado" if occupied else "disponible",
+            "status": "occupied" if occupied else "available",
+        },
         filters=[
             {"column": "id", "value": space_id, "optional": False},
             {"column": "garage_id", "value": g.current_user_garage_id, "optional": False},

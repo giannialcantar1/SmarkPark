@@ -83,7 +83,11 @@ function formatDateLabel(value) {
 
 function getSpaceStatus(space) {
   const raw = String(space?.status || space?.estado || '').trim().toLowerCase()
-  return raw.includes('ocup') ? 'occupied' : 'available'
+  const occupied =
+    Boolean(space?.ocupado || space?.occupied) ||
+    ['ocupado', 'occupied', 'busy'].includes(raw) ||
+    raw.includes('ocup')
+  return occupied ? 'occupied' : 'available'
 }
 
 function getSpaceFloor(space) {
@@ -94,6 +98,21 @@ function getSpaceFloor(space) {
 
 function getSpaceCode(space) {
   return String(space?.code || space?.codigo || space?.nombre || space?.id || 'N/D').trim()
+}
+
+function getSessionSpaceKeys(session) {
+  return [
+    session?.space_id,
+    session?.espacio_id,
+    session?.space_code,
+    session?.espacio,
+    session?.space?.id,
+    session?.space?.code,
+    session?.space?.codigo,
+    session?.space?.nombre,
+  ]
+    .map((value) => String(value || '').trim().toLowerCase())
+    .filter(Boolean)
 }
 
 function getVehicleStatus(vehicle) {
@@ -311,11 +330,38 @@ export default function Dashboard() {
   const vehicles = Array.isArray(vehiclesApi.data) ? vehiclesApi.data : []
   const activeSessions = Array.isArray(activeSessionsApi.data) ? activeSessionsApi.data : []
 
+  const spacesWithSessionOccupancy = useMemo(() => {
+    const occupiedSpaceKeys = new Set(activeSessions.flatMap(getSessionSpaceKeys))
+    if (!occupiedSpaceKeys.size) return spaces
+
+    return spaces.map((space) => {
+      const spaceKeys = [
+        space?.id,
+        space?.code,
+        space?.codigo,
+        space?.nombre,
+        space?.numero,
+      ]
+        .map((value) => String(value || '').trim().toLowerCase())
+        .filter(Boolean)
+      const isOccupiedBySession = spaceKeys.some((key) => occupiedSpaceKeys.has(key))
+
+      if (!isOccupiedBySession || getSpaceStatus(space) === 'occupied') return space
+      return {
+        ...space,
+        estado: 'ocupado',
+        status: 'occupied',
+        ocupado: true,
+        occupied: true,
+      }
+    })
+  }, [activeSessions, spaces])
+
   const occupancy = useMemo(() => {
-    const totalSpaces = Math.max(Number(stats.totalSpaces || 0), spaces.length, activeSessions.length)
+    const totalSpaces = Math.max(Number(stats.totalSpaces || 0), spacesWithSessionOccupancy.length, activeSessions.length)
     const occupiedSpaces = Math.max(
       Number(stats.occupiedSpaces || 0),
-      spaces.filter((space) => getSpaceStatus(space) === 'occupied').length,
+      spacesWithSessionOccupancy.filter((space) => getSpaceStatus(space) === 'occupied').length,
       activeSessions.length,
     )
     const availableSpaces =
@@ -330,7 +376,7 @@ export default function Dashboard() {
       availableSpaces,
       occupancyPercentage,
     }
-  }, [activeSessions.length, spaces, stats])
+  }, [activeSessions.length, spacesWithSessionOccupancy, stats])
 
   const activeVehicles = useMemo(() => {
     const fromStats = Number(stats.totalVehicles || 0)
@@ -357,10 +403,10 @@ export default function Dashboard() {
 
   const floors = useMemo(() => {
     const fromStats = Array.isArray(stats.floorStats) ? stats.floorStats.map((item) => String(item.floor)) : []
-    const fromSpaces = spaces.map((space) => getSpaceFloor(space))
+    const fromSpaces = spacesWithSessionOccupancy.map((space) => getSpaceFloor(space))
     const unique = [...new Set([...fromStats, ...fromSpaces].filter(Boolean))]
     return unique.length ? unique.sort() : ['A', 'B', 'C', 'D']
-  }, [spaces, stats.floorStats])
+  }, [spacesWithSessionOccupancy, stats.floorStats])
 
   useEffect(() => {
     if (!floors.includes(activeFloor)) {
@@ -370,26 +416,26 @@ export default function Dashboard() {
 
   const floorStats = useMemo(() => {
     // Si el backend devuelve datos válidos, usarlos
-    if (Array.isArray(stats.floorStats) && stats.floorStats.length) {
+    if (!spacesWithSessionOccupancy.length && Array.isArray(stats.floorStats) && stats.floorStats.length) {
       return stats.floorStats
     }
 
     // Fallback: calcular desde los espacios
     return floors.map((floor) => {
-      const floorSpaces = spaces.filter((space) => getSpaceFloor(space) === floor)
+      const floorSpaces = spacesWithSessionOccupancy.filter((space) => getSpaceFloor(space) === floor)
       const occupied = floorSpaces.filter((space) => getSpaceStatus(space) === 'occupied').length
       const available = Math.max(floorSpaces.length - occupied, 0)
       const percentage = floorSpaces.length ? Math.round((occupied / floorSpaces.length) * 100) : 0
 
       return { floor, occupied, available, percentage }
     })
-  }, [floors, spaces, stats.floorStats])
+  }, [floors, spacesWithSessionOccupancy, stats.floorStats])
 
   const activeFloorSpaces = useMemo(() => {
-    return spaces
+    return spacesWithSessionOccupancy
       .filter((space) => getSpaceFloor(space) === activeFloor)
       .sort((left, right) => getSpaceCode(left).localeCompare(getSpaceCode(right), undefined, { numeric: true }))
-  }, [activeFloor, spaces])
+  }, [activeFloor, spacesWithSessionOccupancy])
 
   const revenueTrend = useMemo(() => {
     // FIX: Usar weeklyIncome del backend (stats.weeklyIncome)

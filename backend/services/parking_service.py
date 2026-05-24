@@ -82,8 +82,46 @@ class ParkingService:
                 sessions.append(normalized)
         return sessions
 
+    def _active_session_space_keys(self, *, garage_id: str) -> set[str]:
+        keys: set[str] = set()
+        for session in self.get_active_sessions(garage_id=garage_id):
+            for key in ("space_id", "espacio_id", "space_code", "espacio"):
+                value = normalize_text(session.get(key))
+                if value:
+                    keys.add(value)
+        return keys
+
+    def _apply_session_occupancy(self, spaces: list[dict], *, garage_id: str) -> list[dict]:
+        active_space_keys = self._active_session_space_keys(garage_id=garage_id)
+        if not active_space_keys:
+            return spaces
+
+        normalized_spaces: list[dict] = []
+        for space in spaces:
+            space_keys = {
+                normalize_text(space.get("id")),
+                normalize_text(space.get("code")),
+                normalize_text(space.get("codigo")),
+                normalize_text(space.get("numero")),
+            }
+            is_occupied_by_session = any(key and key in active_space_keys for key in space_keys)
+            if is_occupied_by_session and not space.get("occupied"):
+                normalized_spaces.append(
+                    normalize_parking_space(
+                        {
+                            **space,
+                            "ocupado": True,
+                            "estado": "ocupado",
+                            "status": "occupied",
+                        }
+                    )
+                )
+            else:
+                normalized_spaces.append(space)
+        return normalized_spaces
+
     def list_spaces(self, *, garage_id: str, floor: str | None = None, only_available: bool = False) -> list[dict]:
-        spaces = self._spaces(garage_id=garage_id)
+        spaces = self._apply_session_occupancy(self._spaces(garage_id=garage_id), garage_id=garage_id)
         if only_available:
             spaces = [space for space in spaces if not space.get("occupied")]
         if floor:
@@ -92,10 +130,10 @@ class ParkingService:
         return spaces
 
     def get_available_spaces(self, *, garage_id: str) -> list[dict]:
-        return [space for space in self._spaces(garage_id=garage_id) if not space.get("occupied")]
+        return [space for space in self.list_spaces(garage_id=garage_id) if not space.get("occupied")]
 
     def get_space_stats(self, *, garage_id: str) -> dict:
-        spaces = self._spaces(garage_id=garage_id)
+        spaces = self.list_spaces(garage_id=garage_id)
         total = len(spaces)
         occupied = sum(1 for row in spaces if row.get("occupied"))
         available = max(total - occupied, 0)
@@ -296,6 +334,7 @@ class ParkingService:
             {
                 "ocupado": True,
                 "estado": "ocupado",
+                "status": "occupied",
                 "vehiculo_id": vehicle.get("id"),
             },
         )
@@ -378,6 +417,7 @@ class ParkingService:
                 {
                     "ocupado": False,
                     "estado": "disponible",
+                    "status": "available",
                     "vehiculo_id": None,
                 },
             )

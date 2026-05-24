@@ -655,9 +655,15 @@ export default function AssignParkings() {
       })
       setSuccess('Vehículo registrado exitosamente.')
       setSpaces((cur) =>
-        cur.map((sp) => String(sp.id) === String(form.espacioId) ? { ...sp, ocupado: true, estado: 'ocupado' } : sp),
+        cur.map((sp) =>
+          String(sp.id) === String(form.espacioId)
+            ? { ...sp, ocupado: true, occupied: true, estado: 'ocupado', status: 'occupied' }
+            : sp,
+        ),
       )
       resetForm()
+      window.dispatchEvent(new CustomEvent('smartpark:data-refresh'))
+      window.dispatchEvent(new CustomEvent('dashboard-refresh'))
     } catch (err) {
       setError(err.message || 'No se pudo registrar el ingreso.')
     } finally {
