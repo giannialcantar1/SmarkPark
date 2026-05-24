@@ -264,6 +264,52 @@ class AuthController:
                 "code": "staff_register_unexpected_error",
             }), 500
 
+    def visitor_register(self):
+        payload = request.get_json(silent=True) or {}
+        email = str(payload.get("email") or "").strip().lower()
+        password = str(payload.get("password") or "")
+        name = str(payload.get("name") or payload.get("full_name") or "").strip()
+        garage_id = str(payload.get("garage_id") or "").strip() or None
+
+        if not email or not password or not name:
+            return jsonify({"success": False, "error": "email, password y name son requeridos"}), 400
+
+        if len(password) < 6:
+            return jsonify({"success": False, "error": "La contrasena debe tener al menos 6 caracteres"}), 400
+
+        try:
+            result = self.auth_service.register_visitor(
+                email=email,
+                password=password,
+                name=name,
+                garage_id=garage_id,
+                request=request,
+            )
+            return jsonify({
+                "success": True,
+                "message": "Usuario visitante creado correctamente",
+                **result,
+            }), 201
+        except ValueError as exc:
+            return jsonify({
+                "success": False,
+                "error": str(exc),
+                "code": getattr(exc, "code", "visitor_register_validation_error"),
+            }), 400
+        except Exception as exc:
+            print("\n" + "=" * 60)
+            print(f"[AUTH] VISITOR REGISTER FAILED - {type(exc).__name__}")
+            print(f"[AUTH] Email: {email}")
+            print(f"[AUTH] Error: {str(exc)}")
+            traceback.print_exc()
+            print("=" * 60 + "\n")
+            return jsonify({
+                "success": False,
+                "error": str(exc) or "No fue posible registrar el usuario visitante",
+                "type": type(exc).__name__,
+                "code": "visitor_register_unexpected_error",
+            }), 500
+
     def verify(self):
         access_status = self.auth_service.user_service.get_access_status(
             user_id=g.current_user_id,

@@ -38,6 +38,28 @@ function formatDueDate(value) {
 
 const wait = (ms) => new Promise((resolve) => window.setTimeout(resolve, ms))
 
+const getCardExpiryError = (value) => {
+  const digits = String(value || '').replace(/\D/g, '')
+  if (digits.length < 4) return ''
+
+  const month = Number(digits.slice(0, 2))
+  const year = 2000 + Number(digits.slice(2, 4))
+
+  if (!Number.isInteger(month) || month < 1 || month > 12) {
+    return 'Fecha de vencimiento invalida'
+  }
+
+  const now = new Date()
+  const currentMonth = now.getMonth() + 1
+  const currentYear = now.getFullYear()
+
+  if (year < currentYear || (year === currentYear && month < currentMonth)) {
+    return 'La tarjeta está vencida'
+  }
+
+  return ''
+}
+
 export default function PaymentModal({ isOpen, onClose, planData, garageId, onPaymentSuccess }) {
   const [paymentMethod, setPaymentMethod] = useState('card')
   const [cardData, setCardData] = useState(EMPTY_CARD)
@@ -133,6 +155,7 @@ export default function PaymentModal({ isOpen, onClose, planData, garageId, onPa
   }
 
   const cardBrand = useMemo(() => detectCardBrand(cardData.number), [cardData.number])
+  const cardExpiryError = useMemo(() => getCardExpiryError(cardData.expiry), [cardData.expiry])
 
   const isCardValid = useMemo(() => {
     const digits = cardData.number.replace(/\D/g, '')
@@ -140,9 +163,10 @@ export default function PaymentModal({ isOpen, onClose, planData, garageId, onPa
       digits.length >= 15 &&
       cardData.holder.trim().length > 2 &&
       cardData.expiry.length === 5 &&
+      !cardExpiryError &&
       cardData.cvv.length >= 3
     )
-  }, [cardData])
+  }, [cardData, cardExpiryError])
 
   const isTransferValid = useMemo(() => {
     return (
@@ -167,6 +191,7 @@ export default function PaymentModal({ isOpen, onClose, planData, garageId, onPa
     if (!paymentMethod) return 'Selecciona un metodo de pago para continuar.'
     if (!planId) return 'No se encontro el plan mensual que se debe pagar.'
     if (!garageId) return 'No se encontro el garage asociado a este pago.'
+    if (paymentMethod === 'card' && cardExpiryError) return cardExpiryError
     if (paymentMethod === 'card' && !isCardValid) return 'Completa todos los datos de la tarjeta.'
     if (paymentMethod === 'transfer' && !isTransferValid) {
       return 'Completa la referencia, la fecha y el comprobante de la transferencia.'
@@ -347,13 +372,15 @@ export default function PaymentModal({ isOpen, onClose, planData, garageId, onPa
                         <label className={styles.field}>
                           <span className={styles.fieldLabel}>Expiracion</span>
                           <input
-                            className={styles.input}
+                            className={`${styles.input} ${cardExpiryError ? styles.inputError : ''}`}
                             type="text"
                             inputMode="numeric"
                             placeholder="MM/AA"
                             value={cardData.expiry}
                             onChange={(event) => handleCardChange('expiry', event.target.value)}
+                            aria-invalid={Boolean(cardExpiryError)}
                           />
+                          {cardExpiryError && <span className={styles.fieldError}>{cardExpiryError}</span>}
                         </label>
 
                         <label className={styles.field}>

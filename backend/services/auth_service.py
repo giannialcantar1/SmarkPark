@@ -284,6 +284,28 @@ class AuthService:
             },
         )
 
+    def _garage_exists(self, garage_id: str | None) -> bool:
+        normalized_garage_id = normalize_text(garage_id)
+        if not normalized_garage_id:
+            return False
+
+        for table_name in ("garages", "garajes"):
+            rows = select_rows(
+                table_name,
+                order_candidates=["created_at", "updated_at", "nombre", "name"],
+                desc=True,
+                limit=500,
+            )
+            for row in rows:
+                candidates = {
+                    normalize_text(row.get("garage_id")),
+                    normalize_text(row.get("tenant_id")),
+                    normalize_text(row.get("id")),
+                }
+                if normalized_garage_id in candidates:
+                    return True
+        return False
+
     def _find_auth_user_by_email(self, email: str) -> dict | None:
         normalized_email = normalize_text(email)
         if not normalized_email:
@@ -694,6 +716,132 @@ class AuthService:
                 "approval_status": "pendiente_aprobacion",
                 "garage_id": resolved_garage_id,
                 "garage_code": garage.get("codigo") or garage.get("code") or garage_code,
+            }
+        }
+
+    def register_visitor(
+        self,
+        *,
+        email: str,
+        password: str,
+        name: str,
+        garage_id: str | None = None,
+        request: Request,
+    ) -> dict:
+        normalized_email = str(email or "").strip().lower()
+        resolved_garage_id = str(garage_id or "").strip()
+        resolved_role = "usuario"
+
+        if not normalized_email or not password or not name:
+            raise ValueError("email, password y name son requeridos")
+        if not resolved_garage_id:
+            raise ValueError("Debes seleccionar un garage para registrar el usuario")
+        if not self._garage_exists(resolved_garage_id):
+            raise ValueError("El garage seleccionado no existe")
+
+        self._raise_if_staff_email_unavailable(email=normalized_email)
+
+        auth_client = get_user_table_client(use_admin=False)
+        try:
+            admin_client = get_user_table_client(use_admin=True, allow_fallback=False)
+            result = admin_client.auth.admin.create_user(
+                {
+                    "email": normalized_email,
+                    "password": password,
+                    "email_confirm": True,
+                    "user_metadata": {
+                        "name": name,
+                        "full_name": name,
+                        "garage_id": resolved_garage_id,
+                        "role": resolved_role,
+                        "registration_type": "visitor",
+                    },
+                }
+            )
+            user = getattr(result, "user", None)
+        except Exception:
+            result = auth_client.auth.sign_up(
+                {
+                    "email": normalized_email,
+                    "password": password,
+                    "options": {
+                        "data": {
+                            "name": name,
+                            "full_name": name,
+                            "garage_id": resolved_garage_id,
+                            "role": resolved_role,
+                            "registration_type": "visitor",
+                        }
+                    },
+                }
+            )
+            user = getattr(result, "user", None)
+
+        if not user:
+            raise RuntimeError("No fue posible crear el usuario visitante")
+
+        auth_user_id = str(getattr(user, "id", "") or "")
+        ensure_auth_user_metadata(
+            user_id=auth_user_id,
+            email=normalized_email,
+            name=name,
+            garage_id=resolved_garage_id,
+            role=resolved_role,
+        )
+        profile = self.user_service.create_user(
+            user,
+            garage_id=resolved_garage_id,
+            name=name,
+            role=resolved_role,
+        )
+
+        try:
+            insert_row(
+                "registration_logs",
+                {
+                    "user_id": auth_user_id,
+                    "auth_user_id": auth_user_id,
+                    "email": normalized_email,
+                    "name": name,
+                    "role": resolved_role,
+                    "garage_id": resolved_garage_id,
+                    "company_name": "",
+                    "status": "approved",
+                    "approval_status": "approved",
+                    "verification_status": "pending",
+                    "registration_type": "visitor",
+                    "ip_address": get_client_ip(request),
+                },
+            )
+        except Exception as exc:
+            print(f"[VISITOR REGISTRATION LOG ERROR] {exc}")
+
+        try:
+            from services.otp_service import OTPService
+
+            OTPService().generate_and_send(user_id=auth_user_id, email=normalized_email)
+        except Exception as exc:
+            print(f"[VISITOR OTP ERROR] {exc}")
+
+        self.alert_service.log_access_attempt(
+            event="visitor_register",
+            success=True,
+            request=request,
+            user_id=auth_user_id,
+            email=normalized_email,
+            garage_id=resolved_garage_id,
+        )
+
+        stored_user = profile or self.user_repository.get_by_email(normalized_email)
+        return {
+            "user": {
+                "id": auth_user_id,
+                "email": normalized_email,
+                "name": (stored_user or {}).get("nombre") or name,
+                "role": (stored_user or {}).get("rol") or resolved_role,
+                "status": "approved",
+                "approval_status": "approved",
+                "garage_id": (stored_user or {}).get("garage_id") or resolved_garage_id,
             }
         }
 

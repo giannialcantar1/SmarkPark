@@ -25,6 +25,11 @@ def staff_register():
     return controller.staff_register()
 
 
+@auth_bp.post("/visitor-register")
+def visitor_register():
+    return controller.visitor_register()
+
+
 @auth_bp.get("/verify")
 @auth_required
 def verify():

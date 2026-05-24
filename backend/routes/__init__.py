@@ -6,6 +6,7 @@ from .alertas_acceso import alertas_acceso_bp
 from .access_codes import access_codes_bp
 from .auth import auth_bp
 from .dashboard import dashboard_bp
+from .garages import garages_bp
 from .monthly_plans import monthly_plans_bp
 from .morosidad import morosidad_bp
 from .notificaciones import notificaciones_bp
@@ -31,6 +32,7 @@ def register_blueprints(app: Flask) -> None:
     app.register_blueprint(parking_sessions_bp)
     app.register_blueprint(payments_bp)
     app.register_blueprint(dashboard_bp)
+    app.register_blueprint(garages_bp)
     app.register_blueprint(monthly_plans_bp)
     app.register_blueprint(morosidad_bp)
     app.register_blueprint(users_bp)

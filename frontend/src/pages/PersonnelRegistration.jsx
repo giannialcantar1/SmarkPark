@@ -14,6 +14,11 @@ const ROLE_OPTIONS = [
   { value: ROLES.PORTERO, label: 'Portero' },
 ]
 
+const APPROVAL_ROLE_OPTIONS = [
+  ...ROLE_OPTIONS,
+  { value: ROLES.USUARIO, label: 'Usuario' },
+]
+
 const styles = {
   page: { width: '100%', maxWidth: 1240, margin: '0 auto', color: '#e5eefb' },
   publicPage: {
@@ -124,6 +129,17 @@ const styles = {
     borderBottom: '1px solid rgba(148,163,184,0.12)',
   },
   td: { padding: '14px 18px', color: '#fff', fontSize: 13, borderTop: '1px solid rgba(148,163,184,0.08)' },
+  roleSelect: {
+    minWidth: 150,
+    borderRadius: 10,
+    border: '1px solid rgba(148,163,184,0.2)',
+    background: 'rgba(2,6,23,0.52)',
+    color: '#fff',
+    padding: '9px 11px',
+    fontFamily: 'inherit',
+    fontWeight: 700,
+    outline: 'none',
+  },
   status: (status) => ({
     display: 'inline-flex',
     padding: '6px 10px',
@@ -159,6 +175,7 @@ export default function PersonnelRegistration({ mode = 'public' }) {
   const [submitting, setSubmitting] = useState(false)
   const [loadingPending, setLoadingPending] = useState(false)
   const [pendingRequests, setPendingRequests] = useState([])
+  const [approvalRoles, setApprovalRoles] = useState({})
   const [approvingId, setApprovingId] = useState('')
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
@@ -168,7 +185,16 @@ export default function PersonnelRegistration({ mode = 'public' }) {
     setLoadingPending(true)
     try {
       const payload = await apiGet('/api/users/personnel/pending', { forceFresh: true })
-      setPendingRequests(Array.isArray(payload?.data) ? payload.data : [])
+      const requests = Array.isArray(payload?.data) ? payload.data : []
+      setPendingRequests(requests)
+      setApprovalRoles((current) => {
+        const next = {}
+        requests.forEach((requestItem) => {
+          const requestId = String(requestItem.id)
+          next[requestId] = current[requestId] || normalizeRole(requestItem.role) || ROLES.OPERADOR
+        })
+        return next
+      })
     } catch (err) {
       setError(err.message || 'No se pudieron cargar las solicitudes pendientes.')
     } finally {
@@ -190,6 +216,10 @@ export default function PersonnelRegistration({ mode = 'public' }) {
 
   const handleChange = (key, value) => {
     setForm((current) => ({ ...current, [key]: value }))
+  }
+
+  const handleApprovalRoleChange = (requestId, role) => {
+    setApprovalRoles((current) => ({ ...current, [String(requestId)]: role }))
   }
 
   const handleSubmit = async (event) => {
@@ -238,11 +268,12 @@ export default function PersonnelRegistration({ mode = 'public' }) {
   }
 
   const handleApprove = async (requestId) => {
+    const selectedRole = approvalRoles[String(requestId)] || ROLES.OPERADOR
     setApprovingId(String(requestId))
     setError('')
     setSuccess('')
     try {
-      await apiPost(`/api/users/personnel/${requestId}/approve`, {})
+      await apiPost(`/api/users/personnel/${requestId}/approve`, { role: selectedRole })
       setSuccess('Solicitud aprobada correctamente. El personal ya puede iniciar sesion.')
       await loadPendingRequests()
     } catch (err) {
@@ -354,31 +385,48 @@ export default function PersonnelRegistration({ mode = 'public' }) {
                   <thead>
                     <tr>
                       <th style={styles.th}>Nombre</th>
-                      <th style={styles.th}>Rol</th>
+                      <th style={styles.th}>Rol solicitado</th>
+                      <th style={styles.th}>Rol a aprobar</th>
                       <th style={styles.th}>Email</th>
                       <th style={styles.th}>Solicitud</th>
                       <th style={styles.th}>Accion</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {pendingRequests.map((requestItem) => (
-                      <tr key={requestItem.id}>
-                        <td style={styles.td}>{requestItem.name || '--'}</td>
-                        <td style={styles.td}><span style={styles.status('pendiente_aprobacion')}>{requestItem.role}</span></td>
-                        <td style={styles.td}>{requestItem.email || '--'}</td>
-                        <td style={styles.td}>{formatDate(requestItem.created_at)}</td>
-                        <td style={styles.td}>
-                          <button
-                            type="button"
-                            style={styles.button('ghost', approvingId === String(requestItem.id))}
-                            disabled={approvingId === String(requestItem.id)}
-                            onClick={() => handleApprove(requestItem.id)}
-                          >
-                            {approvingId === String(requestItem.id) ? 'Aprobando...' : 'Aprobar'}
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
+                    {pendingRequests.map((requestItem) => {
+                        const requestId = String(requestItem.id)
+                        const selectedRole = approvalRoles[requestId] || normalizeRole(requestItem.role) || ROLES.OPERADOR
+                        return (
+                          <tr key={requestItem.id}>
+                            <td style={styles.td}>{requestItem.name || '--'}</td>
+                            <td style={styles.td}><span style={styles.status('pendiente_aprobacion')}>{requestItem.role}</span></td>
+                            <td style={styles.td}>
+                              <select
+                                value={selectedRole}
+                                onChange={(event) => handleApprovalRoleChange(requestItem.id, event.target.value)}
+                                style={styles.roleSelect}
+                                disabled={approvingId === requestId}
+                              >
+                                {APPROVAL_ROLE_OPTIONS.map((option) => (
+                                  <option key={option.value} value={option.value}>{option.label}</option>
+                                ))}
+                              </select>
+                            </td>
+                            <td style={styles.td}>{requestItem.email || '--'}</td>
+                            <td style={styles.td}>{formatDate(requestItem.created_at)}</td>
+                            <td style={styles.td}>
+                              <button
+                                type="button"
+                                style={styles.button('ghost', approvingId === requestId)}
+                                disabled={approvingId === requestId}
+                                onClick={() => handleApprove(requestItem.id)}
+                              >
+                                {approvingId === requestId ? 'Aprobando...' : 'Aprobar'}
+                              </button>
+                            </td>
+                          </tr>
+                        )
+                      })}
                   </tbody>
                 </table>
               )

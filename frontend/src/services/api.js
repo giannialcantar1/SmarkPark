@@ -326,6 +326,31 @@ export async function registerStaff({ email, password, name, role, garage_code }
   })
 }
 
+export async function registerVisitor({ email, password, name, garage_id, garageId }) {
+  return apiRequest('/api/auth/visitor-register', {
+    method: 'POST',
+    body: {
+      email,
+      password,
+      name,
+      full_name: name,
+      garage_id: garage_id || garageId || '',
+      role: 'usuario',
+    },
+    requiresAuth: false,
+    skipAuthRedirect: true,
+  })
+}
+
+export async function listPublicGarages() {
+  const payload = await apiRequest('/api/garages/list', {
+    method: 'GET',
+    requiresAuth: false,
+    skipAuthRedirect: true,
+  })
+  return payload?.data ?? []
+}
+
 export async function verifyToken(token = getStoredToken()) {
   if (!token || token === SESSION_TOKEN) {
     return getCurrentUserSession()

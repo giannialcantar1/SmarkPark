@@ -5,6 +5,8 @@ from typing import Any
 from repositories import UserRepository
 from utils.supabase_client import ensure_auth_user_metadata, ensure_user_profile, normalize_text, select_rows, update_rows, utcnow_iso
 
+APPROVABLE_ROLES = {"admin", "operador", "seguridad", "mantenimiento", "portero", "usuario"}
+
 
 class UserService:
     def __init__(self) -> None:
@@ -136,8 +138,8 @@ class UserService:
     @staticmethod
     def _is_staff_request(row: dict[str, Any]) -> bool:
         explicit_type = normalize_text(row.get("registration_type") or row.get("request_type"))
-        if explicit_type == "staff":
-            return True
+        if explicit_type:
+            return explicit_type == "staff"
         company_name = normalize_text(row.get("company_name") or row.get("empresa") or row.get("nombre_empresa"))
         return not company_name
 
@@ -219,7 +221,17 @@ class UserService:
             )
         return pending
 
-    def approve_personnel_request(self, *, garage_id: str, request_id: str) -> dict[str, Any] | None:
+    @staticmethod
+    def _resolve_approval_role(target: dict[str, Any], role: str | None = None) -> str:
+        requested_role = normalize_text(role)
+        if requested_role in APPROVABLE_ROLES:
+            return requested_role
+        stored_role = normalize_text(target.get("role") or target.get("rol"))
+        if stored_role in APPROVABLE_ROLES:
+            return stored_role
+        return "operador"
+
+    def approve_personnel_request(self, *, garage_id: str, request_id: str, role: str | None = None) -> dict[str, Any] | None:
         rows = select_rows(
             "registration_logs",
             filters=[{"column": "garage_id", "value": garage_id, "optional": True}],
@@ -239,10 +251,12 @@ class UserService:
         if not target:
             return None
 
+        approved_role = self._resolve_approval_role(target, role)
         approved_at = utcnow_iso()
         updated_logs = update_rows(
             "registration_logs",
             payload={
+                "role": approved_role,
                 "status": "approved",
                 "approval_status": "approved",
                 "verification_status": "approved",
@@ -263,6 +277,8 @@ class UserService:
             update_rows(
                 "users",
                 payload={
+                    "rol": approved_role,
+                    "role": approved_role,
                     "status": "approved",
                     "approval_status": "approved",
                     "estado": "aprobado",
@@ -278,7 +294,7 @@ class UserService:
                 email=target.get("email"),
                 name=target.get("name") or target.get("nombre"),
                 garage_id=garage_id,
-                role=target.get("role") or target.get("rol") or "operador",
+                role=approved_role,
             )
 
         updated_row = updated_logs[0] if updated_logs else {**target, "status": "approved", "approved_at": approved_at}
@@ -287,7 +303,7 @@ class UserService:
             "user_id": target.get("user_id") or target.get("auth_user_id"),
             "email": target.get("email"),
             "name": target.get("name") or target.get("nombre") or target.get("email") or "Usuario",
-            "role": normalize_text(target.get("role") or target.get("rol")) or "operador",
+            "role": approved_role,
             "status": "approved",
             "garage_id": garage_id,
             "approved_at": approved_at,

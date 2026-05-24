@@ -99,6 +99,28 @@ const buildCardReference = (cardNumber, vehicle) => {
   return buildCheckoutReference('tarjeta', vehicle)
 }
 
+const getCardExpiryError = (value) => {
+  const digits = String(value || '').replace(/\D/g, '')
+  if (digits.length < 4) return ''
+
+  const month = Number(digits.slice(0, 2))
+  const year = 2000 + Number(digits.slice(2, 4))
+
+  if (!Number.isInteger(month) || month < 1 || month > 12) {
+    return 'Fecha de vencimiento invalida'
+  }
+
+  const now = new Date()
+  const currentMonth = now.getMonth() + 1
+  const currentYear = now.getFullYear()
+
+  if (year < currentYear || (year === currentYear && month < currentMonth)) {
+    return 'La tarjeta está vencida'
+  }
+
+  return ''
+}
+
 function buildInvoiceData({ vehicle, exitTime, hourlyRate, paymentMethod = '', paymentReference = '' }) {
   const entryDate = parseDate(vehicle?.hora_entrada || vehicle?.entry_time)
   const exitDate = exitTime || new Date()
@@ -815,15 +837,17 @@ export default function Cobros() {
   }, [hourlyRate, selectedVehicle])
 
   const cardBrand = useMemo(() => detectCardBrand(cardData.number), [cardData.number])
+  const cardExpiryError = useMemo(() => getCardExpiryError(cardData.expiry), [cardData.expiry])
   const isCardValid = useMemo(() => {
     const digits = String(cardData.number || '').replace(/\D/g, '')
     return (
       digits.length >= 15 &&
       cardData.holder.trim().length > 2 &&
       cardData.expiry.length === 5 &&
+      !cardExpiryError &&
       cardData.cvv.length >= 3
     )
-  }, [cardData])
+  }, [cardData, cardExpiryError])
   const isTransferValid = useMemo(() => {
     return (
       transferData.reference.trim().length > 2 &&
@@ -908,6 +932,10 @@ export default function Cobros() {
     }
 
     const trimmedReference = activePaymentReference.trim()
+    if (paymentMethod === 'tarjeta' && cardExpiryError) {
+      setPaymentValidationError(cardExpiryError)
+      return
+    }
     if (paymentMethod === 'tarjeta' && !isCardValid) {
       setPaymentValidationError('Completa todos los datos de la tarjeta.')
       return
@@ -1406,7 +1434,7 @@ export default function Cobros() {
                           <label className={paymentUi.field}>
                             <span className={paymentUi.fieldLabel}>Expiracion</span>
                             <input
-                              className={paymentUi.input}
+                              className={`${paymentUi.input} ${cardExpiryError ? paymentUi.inputError : ''}`}
                               type="text"
                               inputMode="numeric"
                               placeholder="MM/AA"
@@ -1416,7 +1444,9 @@ export default function Cobros() {
                                 setPaymentValidationError('')
                               }}
                               disabled={processing}
+                              aria-invalid={Boolean(cardExpiryError)}
                             />
+                            {cardExpiryError && <span className={paymentUi.fieldError}>{cardExpiryError}</span>}
                           </label>
 
                           <label className={paymentUi.field}>
@@ -1530,7 +1560,7 @@ export default function Cobros() {
                     <button
                       type="submit"
                       className={paymentUi.payButton}
-                      disabled={processing || isSubmitDisabled}
+                      disabled={processing || isSubmitDisabled || (paymentMethod === 'tarjeta' && Boolean(cardExpiryError))}
                       style={{ width: '100%' }}
                     >
                       {processing ? 'Procesando...' : `Pagar ${confirmInvoice.total}`}
