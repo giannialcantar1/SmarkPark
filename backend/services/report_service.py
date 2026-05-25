@@ -29,15 +29,18 @@ class ReportService:
         )
 
     def _vehicles(self, *, garage_id: str) -> list[dict]:
-        return self.vehicle_repository.get_by_garage(garage_id)
+        return [self._with_vehicle_display(row) for row in self.vehicle_repository.get_by_garage(garage_id)]
 
     def _sessions(self, *, garage_id: str) -> list[dict]:
         spaces = {str(row.get("id")) for row in self._spaces(garage_id=garage_id)}
-        vehicles = {str(row.get("id")) for row in self._vehicles(garage_id=garage_id)}
+        vehicle_rows = self._vehicles(garage_id=garage_id)
+        vehicles = {str(row.get("id")) for row in vehicle_rows}
+        vehicles_by_id = {str(row.get("id")): row for row in vehicle_rows if row.get("id")}
         result: list[dict] = []
         for row in self.session_repository.get_all(order_candidates=["entrada", "created_at"], desc=True):
             if row.get("garage_id") == garage_id or str(row.get("space_id")) in spaces or str(row.get("vehicle_id")) in vehicles:
-                result.append(row)
+                vehicle = vehicles_by_id.get(str(row.get("vehicle_id") or ""))
+                result.append(self._with_session_vehicle_display(row, vehicle))
         return result
 
     def generate_occupancy_report(self, *, garage_id: str) -> dict:
@@ -104,6 +107,67 @@ class ReportService:
             vehicle_type = row.get("type") or "Sin tipo"
             summary["by_type"][vehicle_type] = summary["by_type"].get(vehicle_type, 0) + 1
         return summary
+
+    @staticmethod
+    def _vehicle_name(row: dict) -> str:
+        if not row:
+            return ""
+        combined = str(
+            row.get("marca_modelo")
+            or row.get("brand_model")
+            or row.get("vehicle_name")
+            or row.get("nombre_vehiculo")
+            or ""
+        ).strip()
+        if combined:
+            return combined
+        brand = str(row.get("marca") or row.get("brand") or "").strip()
+        model = str(row.get("modelo") or row.get("model") or "").strip()
+        return " ".join(part for part in (brand, model) if part).strip()
+
+    @classmethod
+    def _vehicle_display(cls, row: dict) -> str:
+        if not row:
+            return ""
+        plate = str(row.get("placa") or row.get("plate") or "").strip().upper()
+        vehicle_name = cls._vehicle_name(row)
+        if plate and vehicle_name:
+            return f"{plate} - {vehicle_name}"
+        return plate or vehicle_name
+
+    @classmethod
+    def _with_vehicle_display(cls, row: dict) -> dict:
+        enriched = dict(row)
+        vehicle_name = cls._vehicle_name(enriched)
+        vehicle_display = cls._vehicle_display(enriched)
+        if vehicle_name:
+            enriched.setdefault("vehiculo", vehicle_name)
+            enriched.setdefault("vehicle_name", vehicle_name)
+        if vehicle_display:
+            enriched["vehiculo_display"] = vehicle_display
+            enriched["vehicle_display"] = vehicle_display
+        return enriched
+
+    @classmethod
+    def _with_session_vehicle_display(cls, row: dict, vehicle) -> dict:
+        enriched = dict(row)
+        if vehicle:
+            enriched.setdefault("placa", vehicle.get("placa") or vehicle.get("plate"))
+            enriched.setdefault("plate", vehicle.get("plate") or vehicle.get("placa"))
+            enriched.setdefault("marca", vehicle.get("marca") or vehicle.get("brand"))
+            enriched.setdefault("brand", vehicle.get("brand") or vehicle.get("marca"))
+            enriched.setdefault("modelo", vehicle.get("modelo") or vehicle.get("model"))
+            enriched.setdefault("model", vehicle.get("model") or vehicle.get("modelo"))
+        display_source = {**(vehicle or {}), **enriched}
+        vehicle_name = cls._vehicle_name(display_source)
+        vehicle_display = cls._vehicle_display(display_source)
+        if vehicle_name:
+            enriched.setdefault("vehiculo", vehicle_name)
+            enriched.setdefault("vehicle_name", vehicle_name)
+        if vehicle_display:
+            enriched["vehiculo_display"] = vehicle_display
+            enriched["vehicle_display"] = vehicle_display
+        return enriched
 
     def generate_user_report(self, *, garage_id: str) -> dict:
         users = self.user_repository.get_all(

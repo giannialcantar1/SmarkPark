@@ -45,6 +45,25 @@ const durationToMinutes = (value) => {
   return 0
 }
 
+const cleanVehicleText = (value) => String(value || '').trim()
+
+const buildVehicleName = (item = {}) => {
+  const combined = cleanVehicleText(
+    item.marca_modelo || item.brand_model || item.vehicle_name || item.nombre_vehiculo,
+  )
+  if (combined) return combined
+
+  const marca = cleanVehicleText(item.marca || item.brand)
+  const modelo = cleanVehicleText(item.modelo || item.model)
+  return [marca, modelo].filter(Boolean).join(' ').trim()
+}
+
+const formatVehicleDisplay = (item = {}) => {
+  const placa = cleanVehicleText(item.placa || item.plate) || 'Sin placa'
+  const name = buildVehicleName(item)
+  return name ? `${placa} - ${name}` : placa
+}
+
 const buildHistorialRows = (vehiculosPayload, espaciosPayload, sesionesPayload = null) => {
   const sesiones = Array.isArray(sesionesPayload?.data) ? sesionesPayload.data : []
   const vehiculos = sesiones.length ? sesiones : Array.isArray(vehiculosPayload?.data) ? vehiculosPayload.data : []
@@ -65,8 +84,8 @@ const buildHistorialRows = (vehiculosPayload, espaciosPayload, sesionesPayload =
         fechaRaw: fechaReferencia,
         fecha: formatDateTime(fechaReferencia),
         ubicacion,
-        vehiculo: item.modelo ? `${item.modelo}` : item.placa || 'Sin placa',
-        placa: item.placa || '',
+        vehiculo: formatVehicleDisplay(item),
+        placa: item.placa || item.plate || '',
         duracion: formatDuration(item.hora_entrada || item.entry_time, item.hora_salida || item.exit_time),
         costo: item.hora_salida || item.exit_time ? formatMoney(item.monto_total || item.total_amount) : 'Pendiente',
         estado: activo ? 'En curso' : 'Completado',
@@ -523,7 +542,7 @@ export default function HistorialParqueos() {
 
             {/* Vehículo */}
             <div style={s.vehicleBlock}>
-              {item.placa && <span style={s.plateBadge}>{item.placa.slice(0, 7)}</span>}
+              {item.placa && !item.vehiculo.includes(item.placa) && <span style={s.plateBadge}>{item.placa.slice(0, 7)}</span>}
               <span style={s.vehicleModel}>{item.vehiculo}</span>
             </div>
 

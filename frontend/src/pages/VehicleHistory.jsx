@@ -40,6 +40,25 @@ const formatDuration = (startValue, endValue) => {
   return `${hours}h ${String(minutes).padStart(2, '0')}m`
 }
 
+const cleanVehicleText = (value) => String(value || '').trim()
+
+const buildVehicleName = (item = {}) => {
+  const combined = cleanVehicleText(
+    item.marca_modelo || item.brand_model || item.vehicle_name || item.nombre_vehiculo,
+  )
+  if (combined) return combined
+
+  const marca = cleanVehicleText(item.marca || item.brand)
+  const modelo = cleanVehicleText(item.modelo || item.model)
+  return [marca, modelo].filter(Boolean).join(' ').trim()
+}
+
+const formatVehicleDisplay = (item = {}) => {
+  const placa = cleanVehicleText(item.placa || item.plate) || 'Sin placa'
+  const name = buildVehicleName(item)
+  return name ? `${placa} - ${name}` : placa
+}
+
 const buildRows = (vehiculosPayload, espaciosPayload, sesionesPayload = null) => {
   const sesiones = Array.isArray(sesionesPayload?.data) ? sesionesPayload.data : []
   const vehiculos = sesiones.length ? sesiones : Array.isArray(vehiculosPayload?.data) ? vehiculosPayload.data : []
@@ -62,8 +81,8 @@ const buildRows = (vehiculosPayload, espaciosPayload, sesionesPayload = null) =>
         fechaRaw: salida || entrada,
         fecha: formatDateTime(salida || entrada),
         ubicacion,
-        vehiculo: item.modelo || item.model || 'Vehículo registrado',
-        placa: item.placa || 'Sin placa',
+        vehiculo: formatVehicleDisplay(item),
+        placa: item.placa || item.plate || 'Sin placa',
         propietario: item.propietario || item.owner || 'Sin propietario',
         duracion: formatDuration(entrada, salida),
         costo: salida ? formatCurrency(item.monto_total || item.total_amount || 0) : 'Pendiente',
@@ -481,7 +500,7 @@ export default function HistorialVehiculos() {
 
             {/* Vehículo */}
             <div style={s.vehicleBlock}>
-              <span style={s.plateBadge}>{item.placa}</span>
+              {!item.vehiculo.includes(item.placa) && <span style={s.plateBadge}>{item.placa}</span>}
               <span style={s.vehicleModel}>{item.vehiculo}</span>
             </div>
 

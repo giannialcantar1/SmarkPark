@@ -143,11 +143,18 @@ const normalizeVehicle = (vehicle, floorIndex) => {
   const status = String(vehicle?.status || vehicle?.estado || '').toLowerCase()
   const floor = resolveVehicleFloor(vehicle, floorIndex)
   const amount = Number(vehicle?.monto_total || vehicle?.total_amount || 0)
+  const placa = vehicle?.placa || vehicle?.plate || 'Sin placa'
+  const marca = vehicle?.marca || vehicle?.brand || ''
+  const modelo = vehicle?.modelo || vehicle?.model || ''
+  const vehiculoDisplay = formatVehicleDisplay({ ...vehicle, placa, marca, modelo })
 
   return {
-    id: vehicle?.id || `${vehicle?.placa || 'vehiculo'}-${entry || 'sin-fecha'}`,
-    placa: vehicle?.placa || 'Sin placa',
-    modelo: vehicle?.modelo || vehicle?.model || 'Vehículo registrado',
+    id: vehicle?.id || `${placa || 'vehiculo'}-${entry || 'sin-fecha'}`,
+    placa,
+    marca,
+    modelo: modelo || 'Vehículo registrado',
+    vehiculo: buildVehicleName({ ...vehicle, marca, modelo }) || modelo || 'Vehiculo registrado',
+    vehiculoDisplay,
     propietario: vehicle?.propietario || vehicle?.owner || 'Sin propietario',
     piso: floor || '--',
     entry,
@@ -161,6 +168,29 @@ const normalizeVehicle = (vehicle, floorIndex) => {
       vehicle?.space_label ||
       'Sin espacio',
   }
+}
+
+const cleanVehicleText = (value) => String(value || '').trim()
+
+const buildVehicleName = (row = {}) => {
+  const combined = cleanVehicleText(
+    row.marca_modelo ||
+      row.brand_model ||
+      row.vehicle_name ||
+      row.nombre_vehiculo ||
+      row.vehiculo_nombre,
+  )
+  if (combined) return combined
+
+  const marca = cleanVehicleText(row.marca || row.brand)
+  const modelo = cleanVehicleText(row.modelo || row.model)
+  return [marca, modelo].filter(Boolean).join(' ').trim()
+}
+
+const formatVehicleDisplay = (row = {}) => {
+  const placa = cleanVehicleText(row.placa || row.plate) || 'Sin placa'
+  const vehicleName = buildVehicleName(row)
+  return vehicleName ? `${placa} - ${vehicleName}` : placa
 }
 
 const buildDailyTotals = (rows, periodKey) => {
@@ -207,6 +237,7 @@ const buildExportRows = (rows) =>
     fecha: formatDate(row.exit || row.entry),
     hora: formatTime(row.exit || row.entry),
     piso: row.piso || '--',
+    vehiculo: row.vehiculoDisplay || formatVehicleDisplay(row),
     placa: row.placa || 'Sin placa',
     propietario: row.propietario || 'Sin propietario',
     ubicacion: row.location || 'Sin espacio',
@@ -1005,6 +1036,7 @@ export default function Reports() {
         { key: 'fecha', label: 'Fecha' },
         { key: 'hora', label: 'Hora' },
         { key: 'piso', label: 'Piso' },
+        { key: 'vehiculo', label: 'Vehiculo' },
         { key: 'placa', label: 'Placa' },
         { key: 'propietario', label: 'Propietario' },
         { key: 'ubicacion', label: 'Ubicacion' },
@@ -1032,7 +1064,7 @@ export default function Reports() {
       const detailRows = filteredRows.map((row) => ({
         fecha: `${formatDate(row.exit || row.entry)} ${formatTime(row.exit || row.entry)}`,
         piso: row.piso || '--',
-        placa: row.placa || 'Sin placa',
+        vehiculo: row.vehiculoDisplay || formatVehicleDisplay(row),
         propietario: row.propietario || 'Sin propietario',
         duracion: formatDuration(row.entry, row.exit),
         monto: formatCurrency(row.amount),
@@ -1210,10 +1242,10 @@ export default function Reports() {
         columns: [
           { key: 'fecha', label: 'Fecha', width: 0.2 },
           { key: 'piso', label: 'Piso', width: 0.1 },
-          { key: 'placa', label: 'Placa', width: 0.14 },
-          { key: 'propietario', label: 'Propietario', width: 0.24 },
+          { key: 'vehiculo', label: 'Vehiculo', width: 0.26 },
+          { key: 'propietario', label: 'Propietario', width: 0.18 },
           { key: 'duracion', label: 'Duracion', width: 0.14 },
-          { key: 'monto', label: 'Monto', width: 0.18 },
+          { key: 'monto', label: 'Monto', width: 0.12 },
         ],
         rows: detailRows,
         startY: 40,
@@ -1351,7 +1383,7 @@ export default function Reports() {
             <div style={styles.tableHead}>
               <span>Fecha</span>
               <span>Piso</span>
-              <span>Placa</span>
+              <span>Vehiculo</span>
               <span>Propietario</span>
               <span>Duración</span>
               <span>Monto</span>
@@ -1368,7 +1400,9 @@ export default function Reports() {
                     {formatDate(row.exit || row.entry)} - {formatTime(row.exit || row.entry)}
                   </span>
                   <span><span style={styles.badgeFloor}>{row.piso}</span></span>
-                  <strong style={{ fontFamily: "'Syne', sans-serif", color: PAGE.accent, overflowWrap: 'anywhere' }}>{row.placa}</strong>
+                  <strong style={{ fontFamily: "'Syne', sans-serif", color: PAGE.accent, overflowWrap: 'anywhere' }}>
+                    {row.vehiculoDisplay || formatVehicleDisplay(row)}
+                  </strong>
                   <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {row.propietario}
                   </span>
