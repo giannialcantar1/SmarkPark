@@ -63,3 +63,10 @@ def export_pbix_report():
 @auth_required
 def export_parkings_xlsx_report():
     return controller.export_parkings_xlsx()
+
+
+@reports_bp.route("/export-morosidad-xlsx", methods=["POST", "OPTIONS"])
+@cross_origin(**REPORT_EXPORT_CORS)
+@auth_required
+def export_morosidad_xlsx_report():
+    return controller.export_morosidad_xlsx()

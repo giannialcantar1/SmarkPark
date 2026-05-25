@@ -248,17 +248,33 @@ class ReportService:
         garage_id: str,
         generated_by: dict | None = None,
     ) -> tuple[io.BytesIO, str]:
+        return self.build_standard_report_workbook(
+            payload={**payload, "title": payload.get("title") or "Reporte de Parkings", "sheet_name": "Parkings"},
+            garage_id=garage_id,
+            generated_by=generated_by,
+            table_name="SmartPark_Parkings",
+        )
+
+    def build_standard_report_workbook(
+        self,
+        *,
+        payload: dict,
+        garage_id: str,
+        generated_by: dict | None = None,
+        table_name: str | None = None,
+    ) -> tuple[io.BytesIO, str]:
         rows = self._coerce_report_rows(payload.get("rows"))
         if not rows:
             raise ValueError("No se recibieron filas exportables para el reporte.")
 
-        title = str(payload.get("title") or "Reporte de Parkings")
+        title = str(payload.get("title") or "Reporte")
+        sheet_name = str(payload.get("sheet_name") or "Reporte")[:31]
         generated_at = parse_datetime(payload.get("generated_at")) or utcnow()
         garage = self._garage_info(garage_id)
 
         workbook = Workbook()
         worksheet = workbook.active
-        worksheet.title = "Parkings"
+        worksheet.title = sheet_name
         render_report_sheet(
             worksheet,
             title=title,
@@ -266,8 +282,7 @@ class ReportService:
             garage=garage,
             generated_by=generated_by or {},
             generated_at=generated_at,
-            table_name="SmartPark_Parkings",
-            logo_path=self._default_logo_path(),
+            table_name=table_name or f"SmartPark_{sheet_name}",
         )
 
         output = io.BytesIO()

@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { apiDownload, apiGet, getCachedApiData } from '../lib/api'
-import { downloadCsv } from '../lib/exportCsv'
 import { DEFAULT_FLOORS, buildFloorIndex, resolveVehicleFloor } from '../lib/floors'
 
 const PERIODS = [
@@ -1046,16 +1045,6 @@ export default function Reports() {
     buildExportRows(sourceRows).map((row) =>
       Object.fromEntries(exportColumns.map((column) => [column.label, row[column.key]])),
     )
-
-  const handleExportCsv = () => {
-    if (!filteredRows.length) return
-
-    downloadCsv({
-      filename: `${buildExportBaseFilename({ period, floor })}.csv`,
-      columns: exportColumns,
-      rows: buildExportRows(filteredRows),
-    })
-  }
 
   const handleExportExcel = async () => {
     if (!filteredRows.length || exporting.excel) return

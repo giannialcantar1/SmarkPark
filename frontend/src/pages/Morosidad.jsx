@@ -2,8 +2,7 @@ import { useDeferredValue, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
 import useApi from '../hooks/useApi'
-import { apiGet, buildPaginatedPath, getPaginationMeta } from '../lib/api'
-import { downloadCsv } from '../lib/exportCsv'
+import { apiDownload, apiGet, buildPaginatedPath, getPaginationMeta } from '../lib/api'
 
 const PAGE_SIZE = 50
 
@@ -485,6 +484,20 @@ const formatDate = (value) => {
   }).format(parsed)
 }
 
+const downloadBlob = ({ filename, blob }) => {
+  const url = window.URL.createObjectURL(blob)
+  const link = document.createElement('a')
+
+  link.href = url
+  link.download = filename
+  link.style.display = 'none'
+
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  window.URL.revokeObjectURL(url)
+}
+
 const normalizeNumberInput = (value) => {
   if (value === '' || value === null || value === undefined) return ''
   const numeric = String(value).replace(/[^\d]/g, '')
@@ -624,33 +637,30 @@ export default function Morosidad() {
       )
       const exportRows = Array.isArray(payload?.data) ? payload.data : []
 
-      downloadCsv({
-        filename: `smartpark-morosidad-${new Date().toISOString().slice(0, 10)}.csv`,
-        columns: [
-          { key: 'usuario', label: 'Usuario' },
-          { key: 'usuario_email', label: 'Correo' },
-          { key: 'garaje', label: 'Garaje' },
-          { key: 'deuda_total', label: 'Deuda total (DOP)' },
-          { key: 'dias_vencidos', label: 'Dias vencidos' },
-          { key: 'ultimo_pago_fecha', label: 'Ultimo pago' },
-          { key: 'ultimo_pago_monto', label: 'Ultimo pago monto (DOP)' },
-          { key: 'ultimo_pago_referencia', label: 'Referencia ultimo pago' },
-          { key: 'planes_pendientes', label: 'Planes pendientes' },
-        ],
-        rows: exportRows.map((row) => ({
-          usuario: row.usuario || '--',
-          usuario_email: row.usuario_email || '--',
-          garaje: row.garaje || row.garage_id || '--',
-          deuda_total: Number(row.deuda_total || 0).toFixed(2),
-          dias_vencidos: row.dias_vencidos || 0,
-          ultimo_pago_fecha: formatDate(row.ultimo_pago_fecha),
-          ultimo_pago_monto: Number(row.ultimo_pago_monto || 0).toFixed(2),
-          ultimo_pago_referencia: row.ultimo_pago_referencia || '--',
-          planes_pendientes: row.planes_pendientes || 0,
-        })),
+      const rowsForExcel = exportRows.map((row) => ({
+        Usuario: row.usuario || '--',
+        Correo: row.usuario_email || '--',
+        Garaje: row.garaje || row.garage_id || '--',
+        'Deuda total (DOP)': Number(row.deuda_total || 0),
+        'Dias vencidos': row.dias_vencidos || 0,
+        'Ultimo pago fecha': row.ultimo_pago_fecha || '',
+        'Ultimo pago monto (DOP)': Number(row.ultimo_pago_monto || 0),
+        'Referencia ultimo pago': row.ultimo_pago_referencia || '--',
+        'Planes pendientes': row.planes_pendientes || 0,
+      }))
+
+      const { blob, filename } = await apiDownload('/api/reports/export-morosidad-xlsx', {
+        title: 'Reporte de Morosidad',
+        generated_at: new Date().toISOString(),
+        rows: rowsForExcel,
+      })
+
+      downloadBlob({
+        filename: filename || `smartpark-morosidad-${new Date().toISOString().slice(0, 10)}.xlsx`,
+        blob,
       })
     } catch (exportError) {
-      setActionError(exportError.message || 'No se pudo exportar el archivo CSV de morosidad.')
+      setActionError(exportError.message || 'No se pudo exportar el Excel de morosidad.')
     } finally {
       setExporting(false)
     }
@@ -695,7 +705,7 @@ export default function Morosidad() {
             disabled={exporting || rowsApi.loading}
             onClick={handleExport}
           >
-            {exporting ? 'Generando CSV...' : 'Exportar'}
+            {exporting ? 'Generando Excel...' : 'Exportar Excel'}
           </button>
         </aside>
       </section>

@@ -9,6 +9,15 @@ class ReportController:
     def __init__(self) -> None:
         self.report_service = ReportService()
 
+    @staticmethod
+    def _generated_by() -> dict:
+        return {
+            "id": g.current_user_id,
+            "name": g.current_user_name,
+            "email": g.current_user_email,
+            "role": g.current_user_role,
+        }
+
     def occupancy(self):
         data = self.report_service.generate_occupancy_report(garage_id=g.current_user_garage_id)
         return jsonify({"success": True, "data": data})
@@ -30,12 +39,7 @@ class ReportController:
             export_file, filename = self.report_service.build_power_bi_import_bundle(
                 payload=payload,
                 garage_id=g.current_user_garage_id,
-                generated_by={
-                    "id": g.current_user_id,
-                    "name": g.current_user_name,
-                    "email": g.current_user_email,
-                    "role": g.current_user_role,
-                },
+                generated_by=self._generated_by(),
             )
         except ValueError as exc:
             return jsonify({"success": False, "error": str(exc)}), 400
@@ -58,12 +62,31 @@ class ReportController:
             export_file, filename = self.report_service.build_parking_report_workbook(
                 payload=payload,
                 garage_id=g.current_user_garage_id,
-                generated_by={
-                    "id": g.current_user_id,
-                    "name": g.current_user_name,
-                    "email": g.current_user_email,
-                    "role": g.current_user_role,
+                generated_by=self._generated_by(),
+            )
+        except ValueError as exc:
+            return jsonify({"success": False, "error": str(exc)}), 400
+
+        return send_file(
+            export_file,
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            as_attachment=True,
+            download_name=filename,
+        )
+
+    def export_morosidad_xlsx(self):
+        payload = request.get_json(silent=True) or {}
+
+        try:
+            export_file, filename = self.report_service.build_standard_report_workbook(
+                payload={
+                    **payload,
+                    "title": payload.get("title") or "Reporte de Morosidad",
+                    "sheet_name": "Morosidad",
                 },
+                garage_id=g.current_user_garage_id,
+                generated_by=self._generated_by(),
+                table_name="SmartPark_Morosidad",
             )
         except ValueError as exc:
             return jsonify({"success": False, "error": str(exc)}), 400

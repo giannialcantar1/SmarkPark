@@ -69,6 +69,7 @@ const ROUTE_MAP = {
   '/api/reports/vehicles': '/api/reports/vehicles',
   '/api/reports/users': '/api/reports/users',
   '/api/reports/export-parkings-xlsx': '/api/reports/export-parkings-xlsx',
+  '/api/reports/export-morosidad-xlsx': '/api/reports/export-morosidad-xlsx',
 
   '/api/notificaciones': '/api/notificaciones',
   '/api/alertas-acceso': '/api/alertas-acceso',
