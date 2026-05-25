@@ -1355,14 +1355,6 @@ export default function Reports() {
             </button>
             <button
               type="button"
-              style={styles.exportButton(loading || filteredRows.length === 0, 'csv')}
-              onClick={handleExportCsv}
-              disabled={loading || filteredRows.length === 0}
-            >
-              Exportar CSV
-            </button>
-            <button
-              type="button"
               style={styles.exportButton(loading || filteredRows.length === 0 || exporting.pdf, 'pdf')}
               onClick={handleExportPdf}
               disabled={loading || filteredRows.length === 0 || exporting.pdf}
