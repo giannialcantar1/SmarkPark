@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 
-import { apiGet, getCachedApiData } from '../lib/api'
+import { apiDownload, apiGet, getCachedApiData } from '../lib/api'
 import { downloadCsv } from '../lib/exportCsv'
 import { DEFAULT_FLOORS, buildFloorIndex, resolveVehicleFloor } from '../lib/floors'
 
@@ -734,7 +734,7 @@ export default function Reports() {
   const [period, setPeriod] = useState('mes')
   const [floor, setFloor] = useState('todos')
   const [barsAnimated, setBarsAnimated] = useState(false)
-  const [exporting, setExporting] = useState({ pdf: false })
+  const [exporting, setExporting] = useState({ excel: false, pdf: false })
 
   useEffect(() => {
     const timer = window.setTimeout(() => setBarsAnimated(true), 200)
@@ -1027,27 +1027,59 @@ export default function Reports() {
     })
   }, [availableFloors, floor, floorIndex, parqueos, rows])
 
+  const exportColumns = [
+    { key: 'fecha', label: 'Fecha' },
+    { key: 'hora', label: 'Hora' },
+    { key: 'piso', label: 'Piso' },
+    { key: 'vehiculo', label: 'Vehiculo' },
+    { key: 'placa', label: 'Placa' },
+    { key: 'propietario', label: 'Propietario' },
+    { key: 'ubicacion', label: 'Ubicacion' },
+    { key: 'estado', label: 'Estado' },
+    { key: 'entrada', label: 'Entrada' },
+    { key: 'salida', label: 'Salida' },
+    { key: 'duracion', label: 'Duracion' },
+    { key: 'monto_dop', label: 'Monto DOP' },
+  ]
+
+  const buildLabeledExportRows = (sourceRows) =>
+    buildExportRows(sourceRows).map((row) =>
+      Object.fromEntries(exportColumns.map((column) => [column.label, row[column.key]])),
+    )
+
   const handleExportCsv = () => {
     if (!filteredRows.length) return
 
     downloadCsv({
       filename: `${buildExportBaseFilename({ period, floor })}.csv`,
-      columns: [
-        { key: 'fecha', label: 'Fecha' },
-        { key: 'hora', label: 'Hora' },
-        { key: 'piso', label: 'Piso' },
-        { key: 'vehiculo', label: 'Vehiculo' },
-        { key: 'placa', label: 'Placa' },
-        { key: 'propietario', label: 'Propietario' },
-        { key: 'ubicacion', label: 'Ubicacion' },
-        { key: 'estado', label: 'Estado' },
-        { key: 'entrada', label: 'Entrada' },
-        { key: 'salida', label: 'Salida' },
-        { key: 'duracion', label: 'Duracion' },
-        { key: 'monto_dop', label: 'Monto DOP' },
-      ],
+      columns: exportColumns,
       rows: buildExportRows(filteredRows),
     })
+  }
+
+  const handleExportExcel = async () => {
+    if (!filteredRows.length || exporting.excel) return
+
+    setExporting((current) => ({ ...current, excel: true }))
+    setError('')
+
+    try {
+      const generatedAt = new Date().toISOString()
+      const { blob, filename } = await apiDownload('/api/reports/export-parkings-xlsx', {
+        title: 'Reporte de Parkings',
+        generated_at: generatedAt,
+        rows: buildLabeledExportRows(filteredRows),
+      })
+
+      downloadBlob({
+        filename: filename || `${buildExportBaseFilename({ period, floor })}.xlsx`,
+        blob,
+      })
+    } catch (err) {
+      setError(err.message || 'No se pudo exportar el Excel del reporte.')
+    } finally {
+      setExporting((current) => ({ ...current, excel: false }))
+    }
   }
 
   const handleExportPdf = async () => {
@@ -1313,6 +1345,14 @@ export default function Reports() {
             ))}
           </div>
           <div style={styles.exportRow}>
+            <button
+              type="button"
+              style={styles.exportButton(loading || filteredRows.length === 0 || exporting.excel, 'csv')}
+              onClick={handleExportExcel}
+              disabled={loading || filteredRows.length === 0 || exporting.excel}
+            >
+              {exporting.excel ? 'Generando Excel...' : 'Exportar Excel'}
+            </button>
             <button
               type="button"
               style={styles.exportButton(loading || filteredRows.length === 0, 'csv')}

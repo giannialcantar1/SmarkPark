@@ -30,6 +30,12 @@ class ReportController:
             export_file, filename = self.report_service.build_power_bi_import_bundle(
                 payload=payload,
                 garage_id=g.current_user_garage_id,
+                generated_by={
+                    "id": g.current_user_id,
+                    "name": g.current_user_name,
+                    "email": g.current_user_email,
+                    "role": g.current_user_role,
+                },
             )
         except ValueError as exc:
             return jsonify({"success": False, "error": str(exc)}), 400
@@ -44,3 +50,27 @@ class ReportController:
         response.headers["X-SmartPark-Actual-Format"] = "power-bi-import-bundle"
         response.headers["X-SmartPark-Actual-Extension"] = ".zip"
         return response
+
+    def export_parkings_xlsx(self):
+        payload = request.get_json(silent=True) or {}
+
+        try:
+            export_file, filename = self.report_service.build_parking_report_workbook(
+                payload=payload,
+                garage_id=g.current_user_garage_id,
+                generated_by={
+                    "id": g.current_user_id,
+                    "name": g.current_user_name,
+                    "email": g.current_user_email,
+                    "role": g.current_user_role,
+                },
+            )
+        except ValueError as exc:
+            return jsonify({"success": False, "error": str(exc)}), 400
+
+        return send_file(
+            export_file,
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            as_attachment=True,
+            download_name=filename,
+        )

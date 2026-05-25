@@ -1,10 +1,11 @@
 const CSV_BOM = '\uFEFF'
+const DEFAULT_DELIMITER = ';'
 
-function escapeCsvValue(value) {
+function escapeCsvValue(value, delimiter = DEFAULT_DELIMITER) {
   if (value === null || value === undefined) return ''
 
   const normalized = String(value).replace(/\r\n/g, '\n').replace(/\r/g, '\n')
-  const needsQuotes = /[",\n]/.test(normalized)
+  const needsQuotes = normalized.includes('"') || normalized.includes('\n') || normalized.includes(delimiter)
   const escaped = normalized.replace(/"/g, '""')
 
   return needsQuotes ? `"${escaped}"` : escaped
@@ -23,26 +24,26 @@ function normalizeColumns(columns) {
   })
 }
 
-function buildCsvContent(columns, rows) {
+function buildCsvContent(columns, rows, delimiter = DEFAULT_DELIMITER) {
   const normalizedColumns = normalizeColumns(columns)
-  const header = normalizedColumns.map((column) => escapeCsvValue(column.label)).join(',')
+  const header = normalizedColumns.map((column) => escapeCsvValue(column.label, delimiter)).join(delimiter)
 
   const lines = rows.map((row) =>
     normalizedColumns
-      .map((column) => escapeCsvValue(row?.[column.key] ?? ''))
-      .join(','),
+      .map((column) => escapeCsvValue(row?.[column.key] ?? '', delimiter))
+      .join(delimiter),
   )
 
   return [header, ...lines].join('\n')
 }
 
-export function downloadCsv({ filename, columns, rows }) {
+export function downloadCsv({ filename, columns, rows, delimiter = DEFAULT_DELIMITER }) {
   if (!Array.isArray(columns) || !columns.length) {
     throw new Error('columns is required to export CSV')
   }
 
   const safeRows = Array.isArray(rows) ? rows : []
-  const csvContent = CSV_BOM + buildCsvContent(columns, safeRows)
+  const csvContent = CSV_BOM + buildCsvContent(columns, safeRows, delimiter)
   const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
   const url = window.URL.createObjectURL(blob)
   const link = document.createElement('a')

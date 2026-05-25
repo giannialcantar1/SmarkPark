@@ -68,6 +68,7 @@ const ROUTE_MAP = {
   '/api/reports/income': '/api/reports/income',
   '/api/reports/vehicles': '/api/reports/vehicles',
   '/api/reports/users': '/api/reports/users',
+  '/api/reports/export-parkings-xlsx': '/api/reports/export-parkings-xlsx',
 
   '/api/notificaciones': '/api/notificaciones',
   '/api/alertas-acceso': '/api/alertas-acceso',
@@ -832,6 +833,46 @@ export async function apiPost(path, body, options = {}) {
   return apiFetch(path, { ...options, method: 'POST', body })
 }
 
+export async function apiDownload(path, body, options = {}) {
+  const garageId = getGarageId()
+  const token = await getFreshAuthToken()
+  const backendPath = resolveRoute(path)
+  const headers = {
+    Accept: options.accept || 'application/octet-stream',
+    ...(garageId ? { 'X-Garage-ID': garageId } : {}),
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...(options.headers ?? {}),
+  }
+
+  let requestBody = body
+  if (body && !(body instanceof FormData)) {
+    headers['Content-Type'] = 'application/json'
+    requestBody = JSON.stringify(body)
+  }
+
+  const response = await fetch(`${BACKEND_API_URL}${backendPath}`, {
+    method: options.method || 'POST',
+    body: requestBody,
+    headers,
+    credentials: 'include',
+  })
+
+  if (!response.ok) {
+    const message = await response.text()
+    throw new Error(message || 'No se pudo descargar el archivo')
+  }
+
+  return {
+    blob: await response.blob(),
+    filename: filenameFromDisposition(response.headers.get('content-disposition')) || options.filename || 'smartpark-export.xlsx',
+  }
+}
+
+function filenameFromDisposition(disposition) {
+  const match = String(disposition || '').match(/filename\*?=(?:UTF-8''|")?([^";]+)/i)
+  return match ? decodeURIComponent(match[1].replace(/"/g, '').trim()) : ''
+}
+
 export const apiPut = async (path, body, options = {}) => {
   return apiFetch(path, { ...options, method: 'PUT', body })
 }
@@ -848,6 +889,7 @@ export default {
   apiRequest,
   apiGet,
   apiPost,
+  apiDownload,
   apiPut,
   apiPatch,
   apiDelete,

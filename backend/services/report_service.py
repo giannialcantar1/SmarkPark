@@ -4,14 +4,14 @@ from collections import defaultdict
 from datetime import datetime
 import io
 import json
+from pathlib import Path
 import zipfile
 
 from openpyxl import Workbook
-from openpyxl.styles import Font, PatternFill
-from openpyxl.utils import get_column_letter
 
 from repositories import ParkingSpaceRepository, PaymentRepository, SessionRepository, UserRepository, VehicleRepository
-from utils.supabase_client import normalize_text, parse_datetime, utcnow
+from utils.excel_report_template import render_report_sheet
+from utils.supabase_client import normalize_text, parse_datetime, select_rows, utcnow
 
 
 class ReportService:
@@ -181,7 +181,13 @@ class ReportService:
             summary["by_role"][role] = summary["by_role"].get(role, 0) + 1
         return summary
 
-    def build_power_bi_import_bundle(self, *, payload: dict, garage_id: str) -> tuple[io.BytesIO, str]:
+    def build_power_bi_import_bundle(
+        self,
+        *,
+        payload: dict,
+        garage_id: str,
+        generated_by: dict | None = None,
+    ) -> tuple[io.BytesIO, str]:
         tables = payload.get("tables") if isinstance(payload.get("tables"), dict) else {}
         table_rows = {
             "Resumen": self._coerce_rows(tables.get("Resumen") or payload.get("Resumen") or payload.get("resumen")),
@@ -205,6 +211,7 @@ class ReportService:
             export_id=export_id,
             exported_at=exported_at,
             garage_id=garage_id,
+            generated_by=generated_by or {},
         )
 
         bundle_payload = {
@@ -234,11 +241,73 @@ class ReportService:
         zip_buffer.seek(0)
         return zip_buffer, zip_filename
 
+    def build_parking_report_workbook(
+        self,
+        *,
+        payload: dict,
+        garage_id: str,
+        generated_by: dict | None = None,
+    ) -> tuple[io.BytesIO, str]:
+        rows = self._coerce_report_rows(payload.get("rows"))
+        if not rows:
+            raise ValueError("No se recibieron filas exportables para el reporte.")
+
+        title = str(payload.get("title") or "Reporte de Parkings")
+        generated_at = parse_datetime(payload.get("generated_at")) or utcnow()
+        garage = self._garage_info(garage_id)
+
+        workbook = Workbook()
+        worksheet = workbook.active
+        worksheet.title = "Parkings"
+        render_report_sheet(
+            worksheet,
+            title=title,
+            rows=rows,
+            garage=garage,
+            generated_by=generated_by or {},
+            generated_at=generated_at,
+            table_name="SmartPark_Parkings",
+            logo_path=self._default_logo_path(),
+        )
+
+        output = io.BytesIO()
+        workbook.save(output)
+        output.seek(0)
+
+        filename = f"{self._slugify(title)}-{generated_at:%Y-%m-%d}.xlsx"
+        return output, filename
+
     @staticmethod
     def _coerce_rows(value) -> list[dict]:
         if not isinstance(value, list):
             return []
         return [row for row in value if isinstance(row, dict)]
+
+    @classmethod
+    def _coerce_report_rows(cls, value) -> list[dict]:
+        if not isinstance(value, list):
+            return []
+        rows: list[dict] = []
+        for row in value:
+            if isinstance(row, dict):
+                rows.append(row)
+                continue
+            if isinstance(row, str):
+                parsed = cls._parse_delimited_row(row)
+                if parsed:
+                    rows.append(parsed)
+        return rows
+
+    @staticmethod
+    def _parse_delimited_row(value: str) -> dict:
+        import csv
+
+        text = str(value or "").strip()
+        if not text:
+            return {}
+        delimiter = ";" if text.count(";") > text.count(",") else ","
+        values = next(csv.reader([text], delimiter=delimiter), [])
+        return {f"Columna {index}": item for index, item in enumerate(values, start=1)}
 
     @staticmethod
     def _first_value(rows: list[dict], key: str) -> str:
@@ -262,15 +331,28 @@ class ReportService:
         export_id: str,
         exported_at: str,
         garage_id: str,
+        generated_by: dict,
     ) -> io.BytesIO:
         workbook = Workbook()
         default_sheet = workbook.active
         workbook.remove(default_sheet)
 
+        garage = self._garage_info(garage_id)
+        generated_at = parse_datetime(exported_at) or utcnow()
+        logo_path = self._default_logo_path()
+
         sheet_order = ["Resumen", "Historico", "Ocupacion", "Ingresos"]
         for sheet_name in sheet_order:
             worksheet = workbook.create_sheet(title=sheet_name)
-            self._populate_sheet(worksheet, table_rows.get(sheet_name, []))
+            self._populate_sheet(
+                worksheet,
+                table_rows.get(sheet_name, []),
+                title=f"Reporte de Parkings - {sheet_name}",
+                garage=garage,
+                generated_by=generated_by,
+                generated_at=generated_at,
+                logo_path=logo_path,
+            )
 
         meta_sheet = workbook.create_sheet(title="Meta")
         metadata_rows = [
@@ -280,47 +362,53 @@ class ReportService:
             {"key": "requested_format", "value": "pbix"},
             {"key": "actual_format", "value": "power-bi-import-bundle"},
         ]
-        self._populate_sheet(meta_sheet, metadata_rows)
+        self._populate_sheet(
+            meta_sheet,
+            metadata_rows,
+            title="Metadatos del reporte",
+            garage=garage,
+            generated_by=generated_by,
+            generated_at=generated_at,
+            logo_path=logo_path,
+        )
 
         relationships_sheet = workbook.create_sheet(title="Relaciones")
-        self._populate_sheet(relationships_sheet, self._coerce_rows(relationships))
+        self._populate_sheet(
+            relationships_sheet,
+            self._coerce_rows(relationships),
+            title="Relaciones sugeridas",
+            garage=garage,
+            generated_by=generated_by,
+            generated_at=generated_at,
+            logo_path=logo_path,
+        )
 
         output = io.BytesIO()
         workbook.save(output)
         output.seek(0)
         return output
 
-    def _populate_sheet(self, worksheet, rows: list[dict]) -> None:
-        if not rows:
-            worksheet.append(["info"])
-            worksheet.append(["Sin datos"])
-            worksheet.freeze_panes = "A2"
-            return
-
-        headers = list(rows[0].keys())
-        worksheet.append(headers)
-
-        header_fill = PatternFill(fill_type="solid", fgColor="DCE6F1")
-        header_font = Font(bold=True, color="1F2937")
-
-        for column_index, header in enumerate(headers, start=1):
-            cell = worksheet.cell(row=1, column=column_index)
-            cell.fill = header_fill
-            cell.font = header_font
-
-        for row in rows:
-            worksheet.append([self._excel_value(row.get(header)) for header in headers])
-
-        worksheet.freeze_panes = "A2"
-        worksheet.auto_filter.ref = worksheet.dimensions
-
-        for column_index, header in enumerate(headers, start=1):
-            values = [header]
-            for row in rows:
-                value = row.get(header)
-                values.append("" if value is None else str(value))
-            width = min(max(len(item) for item in values) + 2, 40)
-            worksheet.column_dimensions[get_column_letter(column_index)].width = width
+    def _populate_sheet(
+        self,
+        worksheet,
+        rows: list[dict],
+        *,
+        title: str,
+        garage: dict,
+        generated_by: dict,
+        generated_at: datetime,
+        logo_path: Path | None,
+    ) -> None:
+        render_report_sheet(
+            worksheet,
+            title=title,
+            rows=rows,
+            garage=garage,
+            generated_by=generated_by,
+            generated_at=generated_at,
+            table_name=f"SmartPark_{worksheet.title}",
+            logo_path=logo_path,
+        )
 
     @staticmethod
     def _excel_value(value):
@@ -331,6 +419,32 @@ class ReportService:
         if isinstance(value, datetime):
             return value.isoformat()
         return str(value)
+
+    @staticmethod
+    def _garage_info(garage_id: str) -> dict:
+        filters = [{"column": "id", "value": garage_id, "optional": True}]
+        for table_name in ("garages", "garajes"):
+            try:
+                rows = select_rows(table_name, filters=filters, limit=1)
+                if not rows:
+                    rows = select_rows(
+                        table_name,
+                        filters=[{"column": "garage_id", "value": garage_id, "optional": True}],
+                        limit=1,
+                    )
+            except Exception:
+                rows = []
+            if rows:
+                row = rows[0]
+                name = row.get("company_name") or row.get("nombre") or row.get("name") or "SmartPark Garage"
+                address = row.get("address") or row.get("direccion") or row.get("company_address") or ""
+                return {**row, "name": name, "nombre": name, "address": address, "direccion": address}
+        return {"id": garage_id, "garage_id": garage_id, "name": "SmartPark Garage", "address": ""}
+
+    @staticmethod
+    def _default_logo_path() -> Path | None:
+        path = Path(__file__).resolve().parents[2] / "frontend" / "public" / "images" / "logo-smartpark.png"
+        return path if path.exists() else None
 
     @staticmethod
     def _build_power_bi_readme(*, period_label: str, floor_label: str) -> str:

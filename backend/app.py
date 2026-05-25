@@ -27,7 +27,14 @@ def create_app() -> Flask:
         supports_credentials=True,
         allow_headers=["Content-Type", "Authorization", "X-Garage-ID", "Accept"],
         methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
-        expose_headers=["Content-Type", "Authorization"],
+        expose_headers=[
+            "Content-Type",
+            "Authorization",
+            "Content-Disposition",
+            "X-SmartPark-Requested-Format",
+            "X-SmartPark-Actual-Format",
+            "X-SmartPark-Actual-Extension",
+        ],
     )
 
     @app.after_request
@@ -42,7 +49,10 @@ def create_app() -> Flask:
         response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS, PATCH'
         response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Garage-ID, Accept'
         response.headers['Access-Control-Allow-Credentials'] = 'true'
-        response.headers['Access-Control-Expose-Headers'] = 'Content-Type, Authorization'
+        response.headers['Access-Control-Expose-Headers'] = (
+            'Content-Type, Authorization, Content-Disposition, '
+            'X-SmartPark-Requested-Format, X-SmartPark-Actual-Format, X-SmartPark-Actual-Extension'
+        )
         return response
 
     register_blueprints(app)
