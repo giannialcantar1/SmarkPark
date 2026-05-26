@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
@@ -9,7 +10,18 @@ import markerShadow from 'leaflet/dist/images/marker-shadow.png'
 
 const DEFAULT_CENTER = { lat: 18.4861, lng: -69.9312 }
 const DEFAULT_ZOOM = 13
+const TILE_LAYERS = [
+  {
+    url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+    attribution: '&copy; OpenStreetMap contributors',
+  },
+  {
+    url: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
+    attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
+  },
+]
 
+delete L.Icon.Default.prototype._getIconUrl
 L.Icon.Default.mergeOptions({
   iconRetinaUrl: markerIcon2x,
   iconUrl: markerIcon,
@@ -111,6 +123,7 @@ export default function RegisterMapModal({
     setSearchQuery(initialAddress)
     setResults([])
     setMapError('')
+    setSelectedLocation(null)
 
     const map = L.map(mapContainerRef.current, {
       center: [DEFAULT_CENTER.lat, DEFAULT_CENTER.lng],
@@ -120,10 +133,29 @@ export default function RegisterMapModal({
 
     mapInstanceRef.current = map
 
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      maxZoom: 19,
-      attribution: '&copy; OpenStreetMap contributors',
-    }).addTo(map)
+    let tileLayer = null
+    let tileFallbackIndex = 0
+
+    const addTileLayer = (layerIndex) => {
+      const layerConfig = TILE_LAYERS[layerIndex]
+      tileLayer = L.tileLayer(layerConfig.url, {
+        maxZoom: 19,
+        attribution: layerConfig.attribution,
+      }).addTo(map)
+
+      tileLayer.on('tileerror', () => {
+        if (tileFallbackIndex < TILE_LAYERS.length - 1) {
+          tileFallbackIndex += 1
+          tileLayer.remove()
+          addTileLayer(tileFallbackIndex)
+          return
+        }
+
+        setMapError('No se pudieron cargar las imagenes del mapa. Puedes buscar la direccion o intentar de nuevo.')
+      })
+    }
+
+    addTileLayer(tileFallbackIndex)
 
     map.on('click', async (event) => {
       const { lat, lng } = event.latlng
@@ -202,7 +234,7 @@ export default function RegisterMapModal({
 
   if (!isOpen) return null
 
-  return (
+  const modal = (
     <div className="sp-modal-overlay" role="presentation">
       <div className="sp-modal register-map-modal" role="dialog" aria-modal="true" aria-labelledby="register-map-title">
         <div className="sp-modal__header">
@@ -254,30 +286,37 @@ export default function RegisterMapModal({
 
           <div ref={mapContainerRef} className="register-map-canvas" />
 
-          <div className="register-map-selection">
-            <div>
-              <span className="register-map-selection__label">Direccion seleccionada</span>
-              <strong className="register-map-selection__value">
-                {selectedAddress || 'Haz click en el mapa o usa la busqueda.'}
-              </strong>
+          {selectedLocation ? (
+            <div className="register-map-selection">
+              <div>
+                <span className="register-map-selection__label">Direccion seleccionada</span>
+                <strong className="register-map-selection__value">{selectedAddress}</strong>
+              </div>
+              <span className="register-map-selection__hint">
+                Puedes mover el mapa, hacer zoom y elegir cualquier punto.
+              </span>
             </div>
-            <span className="register-map-selection__hint">
-              Puedes mover el mapa, hacer zoom y elegir cualquier punto.
-            </span>
-          </div>
+          ) : null}
 
           {mapError ? <p className="auth-alert error">{mapError}</p> : null}
+        </div>
 
-          <div className="sp-modal__actions">
-            <button type="button" className="auth-btn auth-btn-ghost register-map-action" onClick={onClose}>
-              Cancelar
-            </button>
-            <button type="button" className="auth-btn auth-btn-primary register-map-action" onClick={handleConfirm}>
-              Usar esta direccion
-            </button>
-          </div>
+        <div className="sp-modal__actions register-map-footer">
+          <button type="button" className="auth-btn auth-btn-ghost register-map-action" onClick={onClose}>
+            Cancelar
+          </button>
+          <button
+            type="button"
+            className="auth-btn auth-btn-primary register-map-action"
+            onClick={handleConfirm}
+            disabled={!selectedLocation}
+          >
+            Usar esta direccion
+          </button>
         </div>
       </div>
     </div>
   )
+
+  return createPortal(modal, document.body)
 }

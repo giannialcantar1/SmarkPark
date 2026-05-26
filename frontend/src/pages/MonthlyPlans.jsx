@@ -187,6 +187,42 @@ export default function MonthlyPlans() {
     loadBase({ showLoader: !cachedAllPlans, deferSecondary: true })
   }, [])
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('stripe') === 'cancel') {
+      setError('Pago cancelado en Stripe.')
+      window.history.replaceState({}, '', window.location.pathname)
+      return
+    }
+    if (params.get('stripe') !== 'success') return
+
+    const checkoutSessionId = params.get('checkout_session_id')
+    if (!checkoutSessionId) return
+
+    const confirmStripePayment = async () => {
+      setError('')
+      setSuccess('')
+      try {
+        const response = await apiPost('/api/payments/stripe/confirm', {
+          checkout_session_id: checkoutSessionId,
+        })
+        const status = response?.data?.status
+        if (status === 'paid') {
+          setSuccess(`Pago mensual con Stripe confirmado. Referencia ${checkoutSessionId}.`)
+          await loadBase({ showLoader: false })
+        } else {
+          setError('Stripe recibio el pago, pero aun esta pendiente de confirmacion.')
+        }
+      } catch (err) {
+        setError(err.message || 'No se pudo confirmar el pago de Stripe.')
+      } finally {
+        window.history.replaceState({}, '', window.location.pathname)
+      }
+    }
+
+    confirmStripePayment()
+  }, [])
+
   useDeferredLoader(
     () => {
       if (loading || loadingSecondary) return null

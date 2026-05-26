@@ -48,6 +48,8 @@ export default function Register() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [error, setError] = useState(null)
   const [hint, setHint] = useState(null)
+  const [submittedOnce, setSubmittedOnce] = useState(false)
+  const [addressConfirmed, setAddressConfirmed] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [decorReady, setDecorReady] = useState(false)
   const [invitationModal, setInvitationModal] = useState({ open: false, code: '', email: '' })
@@ -77,8 +79,11 @@ export default function Register() {
     return /^[0-9]{10}$/.test(form.company_phone)
   }, [form.company_phone])
 
+  const addressMissing = submittedOnce && !form.company_address.trim()
+
   const handleSubmit = async (event) => {
     event.preventDefault()
+    setSubmittedOnce(true)
     setSubmitting(true)
     setError(null)
     setHint(null)
@@ -96,6 +101,12 @@ export default function Register() {
 
     if (!company_name.trim()) {
       setError('El nombre de la empresa es requerido.')
+      setSubmitting(false)
+      return
+    }
+
+    if (!company_address.trim()) {
+      setError('Ingresa la dirección del garaje o selecciona una ubicación desde el mapa.')
       setSubmitting(false)
       return
     }
@@ -233,7 +244,7 @@ export default function Register() {
   }, [forceAccess, navigate])
 
   return (
-    <div className={`auth-page${decorReady ? ' auth-page--decor' : ''}`}>
+    <div className={`auth-page auth-page--register${decorReady ? ' auth-page--decor' : ''}`}>
       <section className="auth-screen">
         <div className="auth-panel auth-panel--register auth-fade-in" ref={panelRef} onMouseMove={handleMouseMove}>
           <h1>Registro</h1>
@@ -296,29 +307,45 @@ export default function Register() {
               </div>
             </div>
 
-            <div className="auth-field">
-              <label htmlFor="reg-company-address">Direccion</label>
-              <div className="auth-input-icon">
-                <span className="material-symbols-outlined">location_on</span>
-                <input
-                  id="reg-company-address"
-                  name="company_address"
-                  type="text"
-                  placeholder="Direccion del garaje"
-                  value={form.company_address}
-                  onChange={(event) => setForm({ ...form, company_address: event.target.value })}
-                />
-                <button
-                  type="button"
-                  className="auth-inline-action"
-                  onClick={() => setIsMapOpen(true)}
-                  aria-label="Seleccionar direccion en el mapa"
+            <section className={`register-address-section${addressMissing ? ' invalid' : ''}`}>
+              <div className="auth-field register-address-field">
+                <label htmlFor="reg-company-address">Dirección del garaje</label>
+                <div className="auth-input-icon register-address-input">
+                  <span className="material-symbols-outlined">location_on</span>
+                  <textarea
+                    id="reg-company-address"
+                    name="company_address"
+                    aria-describedby="reg-company-address-help"
+                    rows={2}
+                    placeholder="Ej: Av. Winston Churchill 123, Santo Domingo"
+                    value={form.company_address}
+                    onChange={(event) => {
+                      setForm({ ...form, company_address: event.target.value })
+                      setAddressConfirmed(false)
+                    }}
+                    aria-invalid={addressMissing}
+                  />
+                </div>
+                <p
+                  id="reg-company-address-help"
+                  className={`auth-helper-copy${addressMissing ? ' error' : ''}`}
+                  aria-live="polite"
                 >
-                  Mapa
-                </button>
+                  {addressMissing
+                    ? 'La dirección del garaje es obligatoria.'
+                    : 'Ingresa la dirección o selecciona desde el mapa'}
+                </p>
               </div>
-              <p className="auth-helper-copy">Busca la direccion exacta o selecciona el punto directamente en el mapa.</p>
-            </div>
+
+              <button
+                type="button"
+                className="register-map-open-button"
+                onClick={() => setIsMapOpen(true)}
+              >
+                <span className="material-symbols-outlined">map</span>
+                Seleccionar en mapa
+              </button>
+            </section>
 
             <div className="auth-field">
               <label htmlFor="reg-company-phone">Telefono de empresa</label>
@@ -350,10 +377,16 @@ export default function Register() {
                 <input
                   id="reg-spaces-count"
                   name="parking_spaces_count"
-                  type="number"
+                  type="text"
+                  inputMode="numeric"
+                  maxLength={4}
+                  pattern="[0-9]{1,4}"
                   placeholder="Ej: 4000"
                   value={form.parking_spaces_count}
-                  onChange={(event) => setForm({ ...form, parking_spaces_count: event.target.value })}
+                  onChange={(event) => setForm({
+                    ...form,
+                    parking_spaces_count: event.target.value.replace(/\D/g, '').slice(0, 4),
+                  })}
                   required
                 />
               </div>
@@ -506,6 +539,7 @@ export default function Register() {
             onClose={() => setIsMapOpen(false)}
             onConfirm={({ address }) => {
               setForm((current) => ({ ...current, company_address: address || current.company_address }))
+              setAddressConfirmed(Boolean(address))
               setIsMapOpen(false)
             }}
           />

@@ -4,6 +4,7 @@ from flask import g, jsonify, request
 
 from services import VehicleService
 from utils.supabase_client import normalize_text, row_belongs_to_user
+from utils.validators import normalize_plate, validate_plate
 
 
 class VehicleController:
@@ -20,7 +21,7 @@ class VehicleController:
 
     def create(self):
         payload = request.get_json(silent=True) or {}
-        placa = str(payload.get("placa") or payload.get("plate") or "").strip().upper()
+        placa = normalize_plate(payload.get("placa") or payload.get("plate"))
         marca = str(payload.get("marca") or payload.get("brand") or "").strip()
         modelo = str(payload.get("modelo") or payload.get("model") or "").strip()
         tipo = str(payload.get("tipo") or payload.get("type") or "").strip()
@@ -28,6 +29,8 @@ class VehicleController:
 
         if not placa or not marca or not modelo:
             return jsonify({"success": False, "error": "placa, marca y modelo son requeridos"}), 400
+        if not validate_plate(placa):
+            return jsonify({"success": False, "error": "La placa debe tener 3 letras y 4 numeros. Ejemplo: ABC1234"}), 400
 
         existing = self.vehicle_service.get_vehicle(garage_id=g.current_user_garage_id, plate=placa)
         if existing:
@@ -59,12 +62,14 @@ class VehicleController:
             return jsonify({"success": False, "error": "No autorizado para modificar ese vehiculo"}), 403
 
         cleaned = {
-            "placa": str(payload.get("placa") or payload.get("plate") or current.get("plate") or "").strip().upper(),
+            "placa": normalize_plate(payload.get("placa") or payload.get("plate") or current.get("plate")),
             "marca": payload.get("marca") or payload.get("brand") or current.get("brand"),
             "modelo": payload.get("modelo") or payload.get("model") or current.get("model"),
             "tipo": payload.get("tipo") or payload.get("type") or current.get("type"),
             "color": payload.get("color") if "color" in payload else current.get("color"),
         }
+        if not validate_plate(cleaned["placa"]):
+            return jsonify({"success": False, "error": "La placa debe tener 3 letras y 4 numeros. Ejemplo: ABC1234"}), 400
         updated = self.vehicle_service.update_vehicle(vehicle_id=vehicle_id, payload=cleaned)
         if not updated:
             return jsonify({"success": False, "error": "No fue posible actualizar el vehiculo"}), 500

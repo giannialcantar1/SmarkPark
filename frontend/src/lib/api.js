@@ -59,6 +59,8 @@ const ROUTE_MAP = {
 
   '/api/dashboard/stats': '/api/dashboard/stats',
   '/api/payments': '/api/payments',
+  '/api/payments/stripe/checkout-session': '/api/payments/stripe/checkout-session',
+  '/api/payments/stripe/confirm': '/api/payments/stripe/confirm',
 
   '/api/usuarios': '/api/users',
   '/api/usuarios/': '/api/users',
@@ -82,6 +84,7 @@ const ROUTE_MAP = {
   '/api/monthly-plans/user': '/api/monthly-plans/user',
   '/api/monthly-plans/pay': '/api/monthly-plans/pay',
   '/api/monthly-plans/pending': '/api/monthly-plans/pending',
+  '/api/monthly-plans/stripe/checkout-session': '/api/monthly-plans/stripe/checkout-session',
   '/api/morosidad/usuarios': '/api/morosidad/usuarios',
   '/api/morosidad/stats': '/api/morosidad/stats',
   '/api/reservas/crear': '/api/reservas/crear',

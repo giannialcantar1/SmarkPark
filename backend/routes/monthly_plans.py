@@ -3,6 +3,7 @@ from __future__ import annotations
 from flask import Blueprint, g, jsonify, request
 
 from services import MonthlyPlanService
+from services.stripe_service import StripeConfigurationError, StripePaymentService
 from services.user_service import UserService
 from utils.decorators import auth_required
 from utils.pagination import get_pagination_params, paginate_items
@@ -12,6 +13,7 @@ from utils.supabase_client import get_user_table_client, insert_row, normalize_t
 monthly_plans_bp = Blueprint("monthly_plans", __name__, url_prefix="/api/monthly-plans")
 service = MonthlyPlanService()
 user_service = UserService()
+stripe_payments = StripePaymentService()
 
 
 def _admin_only():
@@ -284,3 +286,47 @@ def process_monthly_plan_payment():
             },
         }
     ), 201
+
+
+@monthly_plans_bp.post("/stripe/checkout-session")
+@auth_required
+def create_monthly_plan_stripe_checkout_session():
+    payload = request.get_json(silent=True) or {}
+    plan_id = str(payload.get("plan_id") or "").strip()
+    try:
+        amount = round(float(payload.get("amount") or 0), 2)
+    except (TypeError, ValueError):
+        return jsonify({"success": False, "error": "amount debe ser numerico"}), 400
+
+    if not plan_id or amount <= 0:
+        return jsonify({"success": False, "error": "plan_id y amount son requeridos"}), 400
+
+    try:
+        plans = service.list_plans(garage_id=g.current_user_garage_id)
+    except RuntimeError as exc:
+        return jsonify({"success": False, "error": str(exc)}), 500
+
+    target = next((row for row in plans if normalize_text(row.get("id")) == normalize_text(plan_id)), None)
+    if not target:
+        return jsonify({"success": False, "error": "Plan no encontrado"}), 404
+
+    plan_user_id = str(target.get("user_id") or payload.get("user_id") or "").strip()
+    is_admin = normalize_text(g.current_user_role) == "admin"
+    if not is_admin and not _current_user_owns_plan(plan_user_id):
+        return jsonify({"success": False, "error": "No autorizado para pagar ese plan"}), 403
+
+    try:
+        checkout = stripe_payments.create_monthly_plan_checkout_session(
+            garage_id=g.current_user_garage_id,
+            user_id=plan_user_id or g.current_user_id,
+            plan_id=plan_id,
+            amount=amount,
+        )
+    except StripeConfigurationError as exc:
+        return jsonify({"success": False, "error": str(exc)}), 503
+    except ValueError as exc:
+        return jsonify({"success": False, "error": str(exc)}), 400
+    except Exception as exc:
+        return jsonify({"success": False, "error": str(exc) or "No se pudo crear el checkout de Stripe"}), 500
+
+    return jsonify({"success": True, "data": checkout})

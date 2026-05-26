@@ -47,6 +47,24 @@ const formatDateTime = (value) => {
   return new Intl.DateTimeFormat('es-DO', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).format(date)
 }
 
+const formatPlateInput = (value) => {
+  const raw = String(value || '').toUpperCase()
+  let plate = ''
+  let letterCount = 0
+  let digitCount = 0
+  for (const char of raw) {
+    if (letterCount < 3 && /[A-Z]/.test(char)) {
+      plate += char
+      letterCount += 1
+    } else if (letterCount === 3 && digitCount < 4 && /[0-9]/.test(char)) {
+      plate += char
+      digitCount += 1
+    }
+    if (letterCount === 3 && digitCount === 4) break
+  }
+  return plate
+}
+
 export default function Reservations() {
   const { user } = useAuth()
   const [vehicles, setVehicles] = useState([])
@@ -117,7 +135,7 @@ export default function Reservations() {
     if (selectedVehicle) {
       setForm((cur) => ({
         ...cur,
-        placa: String(selectedVehicle.placa || selectedVehicle.plate || '').trim().toUpperCase(),
+        placa: formatPlateInput(selectedVehicle.placa || selectedVehicle.plate),
       }))
     }
   }, [selectedVehicle])
@@ -127,6 +145,11 @@ export default function Reservations() {
     setSaving(true)
     setError('')
     setSuccess('')
+    if (!/^[A-Z]{3}[0-9]{4}$/.test(form.placa)) {
+      setError('La placa debe tener 3 letras y 4 numeros. Ejemplo: ABC1234.')
+      setSaving(false)
+      return
+    }
     try {
       await apiPost('/api/reservas/crear', {
         user_id: currentUserId,
@@ -211,7 +234,15 @@ export default function Reservations() {
 
               <label style={styles.label}>
                 <span>Placa</span>
-                <input value={form.placa} onChange={(event) => setForm((cur) => ({ ...cur, placa: event.target.value.toUpperCase() }))} style={styles.input} placeholder="ABC-123" />
+                <input
+                  value={form.placa}
+                  onChange={(event) => setForm((cur) => ({ ...cur, placa: formatPlateInput(event.target.value) }))}
+                  style={styles.input}
+                  placeholder="ABC1234"
+                  maxLength={7}
+                  pattern="[A-Z]{3}[0-9]{4}"
+                  title="La placa debe tener 3 letras y 4 numeros. Ejemplo: ABC1234"
+                />
               </label>
 
               <label style={styles.label}>

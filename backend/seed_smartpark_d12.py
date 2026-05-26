@@ -86,7 +86,7 @@ def seed_vehicle(report: dict[str, object]) -> None:
             row
             for row in rows
             if str(row.get("garage_id") or "") == GARAGE_ID
-            and str(row.get("placa") or row.get("plate") or "").strip().upper() == "ABC-123"
+            and str(row.get("placa") or row.get("plate") or "").strip().upper() == "ABC1234"
         ),
         None,
     )
@@ -97,8 +97,8 @@ def seed_vehicle(report: dict[str, object]) -> None:
         "vehicles",
         {
             "garage_id": GARAGE_ID,
-            "placa": "ABC-123",
-            "plate": "ABC-123",
+            "placa": "ABC1234",
+            "plate": "ABC1234",
             "marca": "Toyota",
             "modelo": "Corolla",
             "tipo": "auto",

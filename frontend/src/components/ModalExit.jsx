@@ -244,7 +244,7 @@ export default function ModalExit({ isOpen, onClose, onSuccess, initialPlate = '
     setPlate(initialPlate)
 
     // Si hay placa inicial, disparar la API automáticamente
-    if (initialPlate && initialPlate.length >= 6) {
+    if (initialPlate && initialPlate.length >= 7) {
       exitApi.execute(initialPlate).then((payload) => {
         const enriched = { ...payload, placa: initialPlate }
         setResult(enriched)
@@ -270,8 +270,8 @@ export default function ModalExit({ isOpen, onClose, onSuccess, initialPlate = '
     let out = ''; let l = 0; let d = 0
     for (const c of raw) {
       if (l < 3 && /[A-Z]/.test(c)) { out += c; l++ }
-      else if (l === 3 && d < 3 && /[0-9]/.test(c)) { out += c; d++ }
-      if (l === 3 && d === 3) break
+      else if (l === 3 && d < 4 && /[0-9]/.test(c)) { out += c; d++ }
+      if (l === 3 && d === 4) break
     }
     setPlate(out)
   }
@@ -279,8 +279,8 @@ export default function ModalExit({ isOpen, onClose, onSuccess, initialPlate = '
   const handleSubmit = async (e) => {
     e.preventDefault()
     const p = plate.trim().toUpperCase()
-    if (!/^[A-Z]{3}[0-9]{3}$/.test(p)) {
-      setValidationError('La placa debe tener 3 letras y 3 números (ej: ABC123).')
+    if (!/^[A-Z]{3}[0-9]{4}$/.test(p)) {
+      setValidationError('La placa debe tener 3 letras y 4 numeros (ej: ABC1234).')
       return
     }
     setValidationError('')
@@ -399,8 +399,8 @@ export default function ModalExit({ isOpen, onClose, onSuccess, initialPlate = '
                     type="text"
                     value={plate}
                     onChange={handlePlateChange}
-                    placeholder="ABC123"
-                    maxLength={6}
+                    placeholder="ABC1234"
+                    maxLength={7}
                     autoFocus
                     style={{
                       width: '100%', padding: '13px 16px',

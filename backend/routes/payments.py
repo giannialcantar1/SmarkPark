@@ -1,14 +1,20 @@
 from __future__ import annotations
 
-from flask import Blueprint, g, jsonify, request
+import base64
+
+from flask import Blueprint, current_app, g, jsonify, request
 
 from controllers import PaymentController
+from services import InvoiceService
+from services.stripe_service import StripeConfigurationError, StripePaymentService
 from utils.decorators import auth_required
 from utils.supabase_client import insert_row, normalize_session, select_rows, update_rows, utcnow_iso
 
 
 payments_bp = Blueprint("payments", __name__, url_prefix="/api/payments")
 controller = PaymentController()
+stripe_payments = StripePaymentService()
+invoice_service = InvoiceService()
 
 
 def _garage_sessions() -> list[dict]:
@@ -108,3 +114,92 @@ def list_payments():
 @auth_required
 def payment_receipt(session_id: str):
     return controller.get_receipt(session_id)
+
+
+@payments_bp.post("/stripe/checkout-session")
+@auth_required
+def create_stripe_parking_checkout_session():
+    payload = request.get_json(silent=True) or {}
+    placa = str(payload.get("placa") or payload.get("plate") or "").strip().upper()
+    try:
+        amount = round(float(payload.get("amount") or payload.get("total") or 0), 2)
+    except (TypeError, ValueError):
+        current_app.logger.warning("Stripe checkout parking 400: amount invalido payload=%s", {"placa": placa, "amount": payload.get("amount"), "total": payload.get("total")})
+        return jsonify({"success": False, "error": "amount debe ser numerico"}), 400
+
+    try:
+        checkout = stripe_payments.create_parking_checkout_session(
+            garage_id=g.current_user_garage_id,
+            user_id=g.current_user_id,
+            placa=placa,
+            amount=amount,
+        )
+    except StripeConfigurationError as exc:
+        current_app.logger.warning("Stripe checkout parking config error: %s", str(exc))
+        return jsonify({"success": False, "error": str(exc)}), 503
+    except ValueError as exc:
+        current_app.logger.warning(
+            "Stripe checkout parking 400: %s payload=%s",
+            str(exc),
+            {"placa": placa, "amount": amount, "garage_id": g.current_user_garage_id, "user_id": g.current_user_id},
+        )
+        return jsonify({"success": False, "error": str(exc)}), 400
+    except Exception as exc:
+        current_app.logger.exception("Stripe checkout parking error payload=%s", {"placa": placa, "amount": amount, "garage_id": g.current_user_garage_id})
+        return jsonify({"success": False, "error": str(exc) or "No se pudo crear el checkout de Stripe"}), 500
+
+    return jsonify({"success": True, "data": checkout})
+
+
+@payments_bp.post("/stripe/confirm")
+@auth_required
+def confirm_stripe_checkout_session():
+    payload = request.get_json(silent=True) or {}
+    checkout_session_id = str(payload.get("checkout_session_id") or payload.get("session_id") or "").strip()
+    try:
+        result = stripe_payments.finalize_checkout_session(checkout_session_id)
+    except StripeConfigurationError as exc:
+        return jsonify({"success": False, "error": str(exc)}), 503
+    except ValueError as exc:
+        return jsonify({"success": False, "error": str(exc)}), 400
+    except Exception as exc:
+        return jsonify({"success": False, "error": str(exc) or "No se pudo confirmar el pago de Stripe"}), 500
+
+    if result.get("status") == "paid" and result.get("type") == "parking_exit":
+        session_id = str(
+            (result.get("session") or {}).get("id")
+            or (result.get("payment") or {}).get("session_id")
+            or ""
+        ).strip()
+        if session_id:
+            pdf_bytes = invoice_service.generate_invoice_pdf(session_id=session_id)
+            if pdf_bytes:
+                result["invoice"] = {
+                    "filename": f"factura-{session_id}.pdf",
+                    "mime_type": "application/pdf",
+                    "pdf_base64": base64.b64encode(pdf_bytes).decode("ascii"),
+                    "download_url": f"/api/payments/receipt/{session_id}",
+                }
+
+    return jsonify({"success": True, "data": result})
+
+
+@payments_bp.post("/stripe/webhook")
+def stripe_webhook():
+    payload = request.get_data()
+    signature = request.headers.get("Stripe-Signature")
+    try:
+        event = stripe_payments.construct_webhook_event(payload, signature)
+    except StripeConfigurationError as exc:
+        return jsonify({"success": False, "error": str(exc)}), 503
+    except Exception as exc:
+        return jsonify({"success": False, "error": str(exc) or "Webhook invalido"}), 400
+
+    if event.get("type") == "checkout.session.completed":
+        checkout = event["data"]["object"]
+        try:
+            stripe_payments.finalize_checkout_session(checkout.get("id"))
+        except Exception as exc:
+            return jsonify({"success": False, "error": str(exc) or "No se pudo finalizar el pago"}), 500
+
+    return jsonify({"success": True})

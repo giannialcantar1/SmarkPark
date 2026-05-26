@@ -176,7 +176,7 @@ export default function PaymentModal({ isOpen, onClose, planData, garageId, onPa
     )
   }, [transferData])
 
-  const isSubmitDisabled = paymentMethod === 'card' ? !isCardValid : !isTransferValid
+  const isSubmitDisabled = paymentMethod === 'card' ? false : !isTransferValid
 
   const amountLabel = formatCurrency(planData?.monto || planData?.amount || 0)
   const paymentAmount = Number(planData?.monto || planData?.amount || 0)
@@ -191,8 +191,6 @@ export default function PaymentModal({ isOpen, onClose, planData, garageId, onPa
     if (!paymentMethod) return 'Selecciona un metodo de pago para continuar.'
     if (!planId) return 'No se encontro el plan mensual que se debe pagar.'
     if (!garageId) return 'No se encontro el garage asociado a este pago.'
-    if (paymentMethod === 'card' && cardExpiryError) return cardExpiryError
-    if (paymentMethod === 'card' && !isCardValid) return 'Completa todos los datos de la tarjeta.'
     if (paymentMethod === 'transfer' && !isTransferValid) {
       return 'Completa la referencia, la fecha y el comprobante de la transferencia.'
     }
@@ -236,14 +234,24 @@ export default function PaymentModal({ isOpen, onClose, planData, garageId, onPa
     setReferenceNumber('')
     setPaymentState('processing')
 
-    await wait(2000)
-    if (!isMountedRef.current) return
-
-    const paymentApproved = Math.random() < 0.85
-    if (!paymentApproved) {
-      setPaymentState('error')
-      setErrorMessage('Pago rechazado por la entidad emisora. Puedes reintentar o cambiar el metodo.')
-      return
+    if (paymentMethod === 'card') {
+      try {
+        const response = await apiPost('/api/monthly-plans/stripe/checkout-session', {
+          plan_id: planId,
+          amount: paymentAmount,
+          garage_id: garageId,
+          user_id: userId || null,
+        })
+        const checkoutUrl = response?.data?.url
+        if (!checkoutUrl) throw new Error('Stripe no devolvio una URL de checkout.')
+        window.location.assign(checkoutUrl)
+        return
+      } catch (error) {
+        if (!isMountedRef.current) return
+        setPaymentState('error')
+        setErrorMessage(error.message || 'No se pudo iniciar el pago con Stripe.')
+        return
+      }
     }
 
     const generatedReference = generateReferenceNumber()
@@ -342,69 +350,14 @@ export default function PaymentModal({ isOpen, onClose, planData, garageId, onPa
               <>
                 <div className={styles.panels}>
                   <section className={`${styles.panel} ${paymentMethod === 'card' ? styles.panelActive : styles.panelHidden}`}>
-                    <CreditCardPreview cardData={cardData} brand={cardBrand} />
-
-                    <div className={styles.fieldGrid}>
-                      <label className={styles.field}>
-                        <span className={styles.fieldLabel}>Numero de tarjeta</span>
-                        <input
-                          className={styles.input}
-                          type="text"
-                          inputMode="numeric"
-                          placeholder="1234 5678 9012 3456"
-                          value={cardData.number}
-                          onChange={(event) => handleCardChange('number', event.target.value)}
-                        />
-                      </label>
-
-                      <label className={styles.field}>
-                        <span className={styles.fieldLabel}>Titular</span>
-                        <input
-                          className={styles.input}
-                          type="text"
-                          placeholder="NOMBRE DEL TITULAR"
-                          value={cardData.holder}
-                          onChange={(event) => handleCardChange('holder', event.target.value)}
-                        />
-                      </label>
-
-                      <div className={styles.row}>
-                        <label className={styles.field}>
-                          <span className={styles.fieldLabel}>Expiracion</span>
-                          <input
-                            className={`${styles.input} ${cardExpiryError ? styles.inputError : ''}`}
-                            type="text"
-                            inputMode="numeric"
-                            placeholder="MM/AA"
-                            value={cardData.expiry}
-                            onChange={(event) => handleCardChange('expiry', event.target.value)}
-                            aria-invalid={Boolean(cardExpiryError)}
-                          />
-                          {cardExpiryError && <span className={styles.fieldError}>{cardExpiryError}</span>}
-                        </label>
-
-                        <label className={styles.field}>
-                          <span className={styles.fieldLabel}>CVV</span>
-                          <input
-                            className={styles.input}
-                            type="password"
-                            inputMode="numeric"
-                            placeholder="123"
-                            value={cardData.cvv}
-                            onChange={(event) => handleCardChange('cvv', event.target.value)}
-                          />
-                        </label>
-                      </div>
-
-                      <label className={styles.checkbox}>
-                        <input
-                          type="checkbox"
-                          checked={cardSaved}
-                          onChange={(event) => setCardSaved(event.target.checked)}
-                        />
-                        <span>Guardar para futuros pagos</span>
-                      </label>
+                    <div className={styles.bankCard}>
+                      <div className={styles.bankRow}><span>Proveedor</span><strong>Stripe Checkout</strong></div>
+                      <div className={styles.bankRow}><span>Monto</span><strong>{amountLabel}</strong></div>
+                      <div className={styles.bankRow}><span>Plan</span><strong>{clientLabel}</strong></div>
                     </div>
+                    <p className={styles.stateMessage} style={{ margin: 0, textAlign: 'left' }}>
+                      Al continuar, Stripe abrira una pagina segura para completar el pago con tarjeta. SmartPark no guarda datos de tarjeta.
+                    </p>
                   </section>
 
                   <section className={`${styles.panel} ${paymentMethod === 'transfer' ? styles.panelActive : styles.panelHidden}`}>

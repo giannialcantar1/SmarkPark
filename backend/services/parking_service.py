@@ -379,7 +379,9 @@ class ParkingService:
             (
                 row
                 for row in self._sessions(garage_id=garage_id)
-                if normalize_text(row.get("plate")) == normalize_text(normalized_plate) and not row.get("exit_time")
+                if normalize_text(row.get("plate") or row.get("placa")) == normalize_text(normalized_plate)
+                and not row.get("exit_time")
+                and not row.get("salida")
             ),
             None,
         )
@@ -387,7 +389,7 @@ class ParkingService:
             raise ValueError("No existe una sesion activa para esa placa")
 
         exit_time_dt = utcnow()
-        entry_time_dt = parse_datetime(session.get("entry_time")) or exit_time_dt
+        entry_time_dt = parse_datetime(session.get("entry_time") or session.get("entrada") or session.get("hora_entrada")) or exit_time_dt
         duration_minutes = max(1, ceil((exit_time_dt - entry_time_dt).total_seconds() / 60))
         hourly_rate = get_hourly_rate(garage_id, fallback=Config.DEFAULT_HOURLY_RATE)
         amount = round(max(1, ceil(duration_minutes / 60)) * hourly_rate, 2)

@@ -16,6 +16,12 @@ def list_parking_spaces():
     return controller.list_spaces()
 
 
+@parking_spaces_bp.post("")
+@auth_required
+def create_parking_space():
+    return controller.create_space()
+
+
 @parking_spaces_bp.get("/stats")
 @auth_required
 def parking_spaces_stats():
@@ -32,3 +38,9 @@ def parking_spaces_by_floor(floor: str):
 @auth_required
 def update_parking_space(space_id: str):
     return controller.update_space(space_id)
+
+
+@parking_spaces_bp.delete("/<space_id>")
+@auth_required
+def delete_parking_space(space_id: str):
+    return controller.delete_space(space_id)

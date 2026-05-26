@@ -3,7 +3,23 @@ import { useEffect, useMemo, useState } from 'react'
 import { apiGet, getCachedApiData, invalidateApiCache } from '../lib/api'
 import { apiRequest } from '../services/api'
 
-const normalizePlate = (value) => String(value || '').trim().toUpperCase()
+const normalizePlate = (value) => {
+  const raw = String(value || '').trim().toUpperCase()
+  let plate = ''
+  let letterCount = 0
+  let digitCount = 0
+  for (const char of raw) {
+    if (letterCount < 3 && /[A-Z]/.test(char)) {
+      plate += char
+      letterCount += 1
+    } else if (letterCount === 3 && digitCount < 4 && /[0-9]/.test(char)) {
+      plate += char
+      digitCount += 1
+    }
+    if (letterCount === 3 && digitCount === 4) break
+  }
+  return plate
+}
 const getVehiclePlate = (vehicle) => normalizePlate(vehicle?.placa || vehicle?.plate)
 const getVehicleOwner = (vehicle) =>
   vehicle?.propietario || vehicle?.owner_name || vehicle?.owner || vehicle?.nombre || ''
@@ -98,6 +114,9 @@ export default function ModalEntry({ onClose, onSuccess, isOpen }) {
   const handleSubmit = async (e) => {
     e.preventDefault()
     if (!form.plate.trim()) return setError('La placa es requerida')
+    if (!/^[A-Z]{3}[0-9]{4}$/.test(normalizePlate(form.plate))) {
+      return setError('La placa debe tener 3 letras y 4 numeros. Ejemplo: ABC1234.')
+    }
     if (exactKnownVehicle && ['dentro', 'activo', 'active', 'inside'].includes(getVehicleStatus(exactKnownVehicle))) {
       return setError('Ese vehiculo ya esta estacionado en el garaje.')
     }
@@ -216,8 +235,8 @@ export default function ModalEntry({ onClose, onSuccess, isOpen }) {
               type="text" required
               value={form.plate}
               onChange={e => handlePlateChange(e.target.value)}
-              placeholder="ABC-123"
-              maxLength={12}
+              placeholder="ABC1234"
+              maxLength={7}
               style={{
                 width:'100%',padding:'12px 16px',borderRadius:'10px',
                 border:'2px solid #334155',background:'#0f172a',

@@ -238,7 +238,7 @@ Content-Type: application/json
 
 ```json
 {
-  "placa": "ABC-123"
+  "placa": "ABC1234"
 }
 ```
 

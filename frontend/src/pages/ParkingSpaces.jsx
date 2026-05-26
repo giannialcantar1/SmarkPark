@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { apiGet, apiPost } from '../lib/api'
+import { apiDelete, apiGet, apiPost, apiPut } from '../lib/api'
 
 const PAGE_SIZE = 6
 const NIVELES = ['Todos', 'A', 'B', 'C', 'D', 'E']
@@ -12,6 +12,7 @@ export default function Parqueos() {
   const [nivelActivo, setNivelActivo] = useState('Todos')
   const [menuOpen, setMenuOpen] = useState(null)
   const [showModal, setShowModal] = useState(false)
+  const [editingSpace, setEditingSpace] = useState(null)
   const [saving, setSaving] = useState(false)
   const [form, setForm] = useState({ nombre: '', nivel: 'A', estado: 'disponible' })
 
@@ -28,7 +29,7 @@ export default function Parqueos() {
     }
   }
 
-  useEffect(() => { loadParqueos() }, [])
+  useEffect(() => { loadSpaces() }, [])
 
   const filtrados = useMemo(() =>
     nivelActivo === 'Todos'
@@ -53,24 +54,90 @@ export default function Parqueos() {
     setSaving(true)
     setError(null)
     try {
-      const response = await apiPost('/api/parking-spaces', {
+      const body = {
         codigo: form.nombre,
         estado: form.estado,
         tipo: form.nivel,
         nivel: form.nivel,
-      })
+        piso: form.nivel,
+      }
+      const response = editingSpace
+        ? await apiPut(`/api/parking-spaces/${editingSpace.id}`, body)
+        : await apiPost('/api/parking-spaces', body)
       const nextParqueo = response?.data
       setShowModal(false)
+      setEditingSpace(null)
       setForm({ nombre: '', nivel: 'A', estado: 'disponible' })
-      setParqueos((current) => [nextParqueo || {
-        nombre: form.nombre,
-        codigo: form.nombre,
-        numero_mostrar: form.nombre,
-        nivel_mostrar: form.nivel,
-        nivel: form.nivel,
-        tipo: form.nivel,
-        estado: form.estado,
-      }, ...current])
+      setParqueos((current) => {
+        const fallback = {
+          id: editingSpace?.id || `${form.nivel}-${form.nombre}`,
+          nombre: form.nombre,
+          codigo: form.nombre,
+          numero_mostrar: form.nombre,
+          nivel_mostrar: form.nivel,
+          nivel: form.nivel,
+          tipo: form.nivel,
+          estado: form.estado,
+        }
+        const item = nextParqueo || fallback
+        if (editingSpace) {
+          return current.map((space) => (space.id === editingSpace.id ? item : space))
+        }
+        return [item, ...current]
+      })
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const openCreate = () => {
+    setEditingSpace(null)
+    setForm({ nombre: '', nivel: 'A', estado: 'disponible' })
+    setShowModal(true)
+  }
+
+  const openEdit = (parqueo) => {
+    setEditingSpace(parqueo)
+    setForm({
+      nombre: parqueo.codigo || parqueo.numero_mostrar || parqueo.numero || parqueo.nombre || '',
+      nivel: parqueo.nivel || parqueo.nivel_mostrar || parqueo.piso || parqueo.tipo || 'A',
+      estado: parqueo.estado === 'ocupado' || parqueo.status === 'occupied' ? 'ocupado' : 'disponible',
+    })
+    setMenuOpen(null)
+    setShowModal(true)
+  }
+
+  const handleToggleStatus = async (parqueo) => {
+    const nextEstado = parqueo.estado === 'ocupado' || parqueo.status === 'occupied' ? 'disponible' : 'ocupado'
+    setSaving(true)
+    setError(null)
+    try {
+      const response = await apiPut(`/api/parking-spaces/${parqueo.id}`, {
+        codigo: parqueo.codigo || parqueo.numero_mostrar || parqueo.numero || parqueo.nombre,
+        nivel: parqueo.nivel || parqueo.nivel_mostrar || parqueo.piso || parqueo.tipo,
+        estado: nextEstado,
+      })
+      const updated = response?.data || { ...parqueo, estado: nextEstado }
+      setParqueos((current) => current.map((space) => (space.id === parqueo.id ? updated : space)))
+      setMenuOpen(null)
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleDelete = async (parqueo) => {
+    const label = parqueo.codigo || parqueo.numero_mostrar || parqueo.numero || parqueo.nombre || 'este espacio'
+    if (!window.confirm(`Eliminar ${label}?`)) return
+    setSaving(true)
+    setError(null)
+    try {
+      await apiDelete(`/api/parking-spaces/${parqueo.id}`)
+      setParqueos((current) => current.filter((space) => space.id !== parqueo.id))
+      setMenuOpen(null)
     } catch (err) {
       setError(err.message)
     } finally {
@@ -88,7 +155,7 @@ export default function Parqueos() {
           <p className="parqueos-kicker">Espacios Registrados</p>
           <h1>Parqueos</h1>
         </div>
-        <button type="button" className="dashboard-cta" onClick={() => setShowModal(true)}>
+        <button type="button" className="dashboard-cta" onClick={openCreate}>
           Nuevo Espacio
         </button>
       </header>
@@ -181,9 +248,9 @@ export default function Parqueos() {
               </button>
               {menuOpen === parqueo.id && (
                 <div className="action-menu">
-                  <button type="button">Ver detalle</button>
-                  <button type="button">Cambiar estado</button>
-                  <button type="button">Eliminar</button>
+                  <button type="button" onClick={() => openEdit(parqueo)}>Editar</button>
+                  <button type="button" onClick={() => handleToggleStatus(parqueo)}>Cambiar estado</button>
+                  <button type="button" onClick={() => handleDelete(parqueo)}>Eliminar</button>
                 </div>
               )}
             </span>
@@ -198,9 +265,9 @@ export default function Parqueos() {
       </div>
 
       {showModal && (
-        <div className="modal-backdrop" onClick={() => setShowModal(false)}>
+        <div className="modal-backdrop" onClick={() => { setShowModal(false); setEditingSpace(null) }}>
           <div className="modal-card" onClick={e => e.stopPropagation()}>
-            <h2>Nuevo Espacio</h2>
+            <h2>{editingSpace ? 'Editar Espacio' : 'Nuevo Espacio'}</h2>
             <form onSubmit={handleSubmit}>
               <label htmlFor="parqueo-nombre">Numero / Nombre</label>
               <input
@@ -233,11 +300,11 @@ export default function Parqueos() {
               </select>
 
               <div className="modal-actions">
-                <button type="button" className="btn btn-ghost" onClick={() => setShowModal(false)}>
+                <button type="button" className="btn btn-ghost" onClick={() => { setShowModal(false); setEditingSpace(null) }}>
                   Cancelar
                 </button>
                 <button type="submit" className="btn btn-primary" disabled={saving}>
-                  {saving ? 'Guardando...' : 'Guardar'}
+                  {saving ? 'Guardando...' : editingSpace ? 'Guardar cambios' : 'Guardar'}
                 </button>
               </div>
             </form>

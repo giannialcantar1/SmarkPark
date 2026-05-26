@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 
 import {
@@ -14,6 +14,7 @@ import './auth.css'
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const PASSWORD_MIN = 6
+const RegisterMapModal = lazy(() => import('../components/RegisterMapModal'))
 
 export default function Login() {
   const navigate = useNavigate()
@@ -26,6 +27,7 @@ export default function Login() {
     password: '',
     confirm_password: '',
     company_name: '',
+    company_address: '',
     company_phone: '',
     parking_spaces_count: '20',
   })
@@ -53,6 +55,9 @@ export default function Login() {
   })
   const [submitting, setSubmitting] = useState(false)
   const [decorReady, setDecorReady] = useState(false)
+  const [registerSubmittedOnce, setRegisterSubmittedOnce] = useState(false)
+  const [registerAddressConfirmed, setRegisterAddressConfirmed] = useState(false)
+  const [isRegisterMapOpen, setIsRegisterMapOpen] = useState(false)
   const panelRef = useRef(null)
   const redirectTo = location.state?.from?.pathname
   const forceAccess = new URLSearchParams(location.search).get('force') === '1'
@@ -79,6 +84,8 @@ export default function Login() {
     if (!visitorForm.email) return null
     return EMAIL_REGEX.test(visitorForm.email)
   }, [visitorForm.email])
+
+  const registerAddressMissing = registerSubmittedOnce && !registerForm.company_address.trim()
 
   const handleTabChange = (tab) => {
     setActiveTab(tab)
@@ -209,6 +216,7 @@ export default function Login() {
 
   const handleRegisterSubmit = async (event) => {
     event.preventDefault()
+    setRegisterSubmittedOnce(true)
     setSubmitting(true)
     setError(null)
     setStatus(null)
@@ -219,6 +227,7 @@ export default function Login() {
       password,
       confirm_password,
       company_name,
+      company_address,
       company_phone,
       parking_spaces_count,
     } = registerForm
@@ -227,6 +236,18 @@ export default function Login() {
 
     if (!name.trim() || !normalizedEmail || !password || !confirm_password || !company_name.trim() || !company_phone.trim()) {
       setError('Debes completar todos los campos del registro.')
+      setSubmitting(false)
+      return
+    }
+
+    if (!company_address.trim()) {
+      setError('Ingresa la dirección del garaje o selecciona una ubicación desde el mapa.')
+      setSubmitting(false)
+      return
+    }
+
+    if (!/^[0-9]{10}$/.test(company_phone)) {
+      setError('El telefono debe tener exactamente 10 digitos.')
       setSubmitting(false)
       return
     }
@@ -258,6 +279,7 @@ export default function Login() {
     try {
       await registerRequest(normalizedEmail, password, name.trim(), {
         company_name: company_name.trim(),
+        company_address: company_address.trim(),
         company_phone: company_phone.trim(),
         parking_spaces_count: spacesCount,
       })
@@ -349,7 +371,7 @@ export default function Login() {
 
 
   return (
-    <div className={`auth-page${decorReady ? ' auth-page--decor' : ''}`}>
+    <div className={`auth-page${activeTab !== 'login' ? ' auth-page--register' : ''}${decorReady ? ' auth-page--decor' : ''}`}>
       <section className="auth-screen">
         <div
           className={`auth-panel auth-fade-in${activeTab !== 'login' ? ' auth-panel--register auth-panel--login-register' : ''}`}
@@ -491,6 +513,107 @@ export default function Login() {
               </div>
 
               <div className="auth-field">
+                <label htmlFor="reg-company">Empresa / garaje</label>
+                <div className="auth-input-icon">
+                  <span className="material-symbols-outlined">apartment</span>
+                  <input
+                    id="reg-company"
+                    name="company_name"
+                    type="text"
+                    placeholder="Nombre de tu empresa"
+                    value={registerForm.company_name}
+                    onChange={(event) => setRegisterForm({ ...registerForm, company_name: event.target.value })}
+                    required
+                  />
+                </div>
+              </div>
+
+              <section className={`register-address-section${registerAddressMissing ? ' invalid' : ''}`}>
+                <div className="auth-field register-address-field">
+                  <label htmlFor="login-reg-company-address">Dirección del garaje</label>
+                  <div className="auth-input-icon register-address-input">
+                    <span className="material-symbols-outlined">location_on</span>
+                    <textarea
+                      id="login-reg-company-address"
+                      name="company_address"
+                      aria-describedby="login-reg-company-address-help"
+                      rows={2}
+                      placeholder="Ej: Av. Winston Churchill 123, Santo Domingo"
+                      value={registerForm.company_address}
+                      onChange={(event) => {
+                        setRegisterForm({ ...registerForm, company_address: event.target.value })
+                        setRegisterAddressConfirmed(false)
+                      }}
+                      aria-invalid={registerAddressMissing}
+                    />
+                  </div>
+                  <p
+                    id="login-reg-company-address-help"
+                    className={`auth-helper-copy${registerAddressMissing ? ' error' : ''}`}
+                    aria-live="polite"
+                  >
+                    {registerAddressMissing
+                      ? 'La dirección del garaje es obligatoria.'
+                      : 'Ingresa la dirección o selecciona desde el mapa'}
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  className="register-map-open-button"
+                  onClick={() => setIsRegisterMapOpen(true)}
+                >
+                  <span className="material-symbols-outlined">map</span>
+                  Seleccionar en mapa
+                </button>
+              </section>
+
+              <div className="auth-field">
+                <label htmlFor="reg-phone">Telefono</label>
+                <div className="auth-input-icon">
+                  <span className="material-symbols-outlined">call</span>
+                  <input
+                    id="reg-phone"
+                    name="company_phone"
+                    type="tel"
+                    inputMode="numeric"
+                    maxLength={10}
+                    pattern="[0-9]{10}"
+                    placeholder="Telefono del negocio"
+                    value={registerForm.company_phone}
+                    onChange={(event) => setRegisterForm({
+                      ...registerForm,
+                      company_phone: event.target.value.replace(/\D/g, '').slice(0, 10),
+                    })}
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="auth-field">
+                <label htmlFor="reg-spaces">Espacios de parqueo</label>
+                <div className="auth-input-icon">
+                  <span className="material-symbols-outlined">local_parking</span>
+                  <input
+                    id="reg-spaces"
+                    name="parking_spaces_count"
+                    type="text"
+                    inputMode="numeric"
+                    maxLength={4}
+                    pattern="[0-9]{1,4}"
+                    min="1"
+                    placeholder="Ej: 20"
+                    value={registerForm.parking_spaces_count}
+                    onChange={(event) => setRegisterForm({
+                      ...registerForm,
+                      parking_spaces_count: event.target.value.replace(/\D/g, '').slice(0, 4),
+                    })}
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="auth-field">
                 <label htmlFor="reg-password">Password</label>
                 <div className="auth-input-icon">
                   <span className="material-symbols-outlined">lock</span>
@@ -541,56 +664,6 @@ export default function Login() {
                       {showRegisterConfirmPassword ? 'visibility_off' : 'visibility'}
                     </span>
                   </button>
-                </div>
-              </div>
-
-              <div className="auth-field">
-                <label htmlFor="reg-company">Nombre de empresa</label>
-                <div className="auth-input-icon">
-                  <span className="material-symbols-outlined">apartment</span>
-                  <input
-                    id="reg-company"
-                    name="company_name"
-                    type="text"
-                    placeholder="Nombre de tu empresa"
-                    value={registerForm.company_name}
-                    onChange={(event) => setRegisterForm({ ...registerForm, company_name: event.target.value })}
-                    required
-                  />
-                </div>
-              </div>
-
-              <div className="auth-field">
-                <label htmlFor="reg-phone">Telefono</label>
-                <div className="auth-input-icon">
-                  <span className="material-symbols-outlined">call</span>
-                  <input
-                    id="reg-phone"
-                    name="company_phone"
-                    type="tel"
-                    inputMode="tel"
-                    placeholder="Telefono del negocio"
-                    value={registerForm.company_phone}
-                    onChange={(event) => setRegisterForm({ ...registerForm, company_phone: event.target.value })}
-                    required
-                  />
-                </div>
-              </div>
-
-              <div className="auth-field">
-                <label htmlFor="reg-spaces">Espacios de parqueo</label>
-                <div className="auth-input-icon">
-                  <span className="material-symbols-outlined">local_parking</span>
-                  <input
-                    id="reg-spaces"
-                    name="parking_spaces_count"
-                    type="number"
-                    min="1"
-                    placeholder="Ej: 20"
-                    value={registerForm.parking_spaces_count}
-                    onChange={(event) => setRegisterForm({ ...registerForm, parking_spaces_count: event.target.value })}
-                    required
-                  />
                 </div>
               </div>
 
@@ -741,6 +814,20 @@ export default function Login() {
                 )}
               </button>
             </form>
+          )}
+          {isRegisterMapOpen && (
+            <Suspense fallback={null}>
+              <RegisterMapModal
+                isOpen={isRegisterMapOpen}
+                initialAddress={registerForm.company_address}
+                onClose={() => setIsRegisterMapOpen(false)}
+                onConfirm={({ address }) => {
+                  setRegisterForm((current) => ({ ...current, company_address: address || current.company_address }))
+                  setRegisterAddressConfirmed(Boolean(address))
+                  setIsRegisterMapOpen(false)
+                }}
+              />
+            </Suspense>
           )}
         </div>
       </section>

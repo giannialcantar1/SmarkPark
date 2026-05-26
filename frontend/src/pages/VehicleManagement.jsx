@@ -14,6 +14,24 @@ const FORMULARIO_VACIO = {
   placa: '', propietario: '', modelo: '', espacio: '', estado: 'estacionado',
 }
 
+const normalizePlateInput = (value) => {
+  const raw = String(value || '').toUpperCase()
+  let plate = ''
+  let letterCount = 0
+  let digitCount = 0
+  for (const char of raw) {
+    if (letterCount < 3 && /[A-Z]/.test(char)) {
+      plate += char
+      letterCount += 1
+    } else if (letterCount === 3 && digitCount < 4 && /[0-9]/.test(char)) {
+      plate += char
+      digitCount += 1
+    }
+    if (letterCount === 3 && digitCount === 4) break
+  }
+  return plate
+}
+
 /* --- helpers ----------------------------------------------- */
 const normalizarEstado = (valor) => {
   const e = String(valor || '').trim().toLowerCase()
@@ -321,11 +339,18 @@ export default function VehicleManagement() {
     setModalOpen(true)
   }
 
-  const handleChange = (field) => (e) =>
-    setForm((c) => ({ ...c, [field]: e.target.value }))
+  const handleChange = (field) => (e) => {
+    const value = field === 'placa' ? normalizePlateInput(e.target.value) : e.target.value
+    setForm((c) => ({ ...c, [field]: value }))
+  }
 
   const guardarVehiculo = async (e) => {
     e.preventDefault(); setSaving(true); setError(null); setSuccess(null)
+    if (!/^[A-Z]{3}[0-9]{4}$/.test(form.placa)) {
+      setError('La placa debe tener 3 letras y 4 numeros. Ejemplo: ABC1234.')
+      setSaving(false)
+      return
+    }
     try {
       if (editingId) {
         const res = await apiPut(`/api/vehiculos/${editingId}`, {
@@ -529,6 +554,9 @@ export default function VehicleManagement() {
                     style={s.modalInput}
                     value={form[field]}
                     onChange={handleChange(field)}
+                    maxLength={field === 'placa' ? 7 : undefined}
+                    pattern={field === 'placa' ? '[A-Z]{3}[0-9]{4}' : undefined}
+                    title={field === 'placa' ? 'La placa debe tener 3 letras y 4 numeros. Ejemplo: ABC1234' : undefined}
                     required={req}
                   />
                 </div>

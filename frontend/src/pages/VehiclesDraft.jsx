@@ -39,6 +39,24 @@ function formatearFecha(valor) {
   }).format(date)
 }
 
+function formatPlateInput(value) {
+  const raw = String(value || '').toUpperCase()
+  let plate = ''
+  let letterCount = 0
+  let digitCount = 0
+  for (const char of raw) {
+    if (letterCount < 3 && /[A-Z]/.test(char)) {
+      plate += char
+      letterCount += 1
+    } else if (letterCount === 3 && digitCount < 4 && /[0-9]/.test(char)) {
+      plate += char
+      digitCount += 1
+    }
+    if (letterCount === 3 && digitCount === 4) break
+  }
+  return plate
+}
+
 export default function VehiculosBoceto() {
   const { user } = useAuth()
   const [vehiculos, setVehiculos] = useState([])
@@ -122,6 +140,12 @@ export default function VehiculosBoceto() {
     setSaving(true)
     setError(null)
     setSuccess(null)
+
+    if (!/^[A-Z]{3}[0-9]{4}$/.test(form.placa)) {
+      setError('La placa debe tener 3 letras y 4 numeros. Ejemplo: ABC1234.')
+      setSaving(false)
+      return
+    }
 
     try {
       await apiPost('/api/vehiculos/entrada', {
@@ -287,7 +311,11 @@ export default function VehiculosBoceto() {
               <input
                 id="vehiculo-boceto-placa"
                 value={form.placa}
-                onChange={(event) => setForm((current) => ({ ...current, placa: event.target.value }))}
+                onChange={(event) => setForm((current) => ({ ...current, placa: formatPlateInput(event.target.value) }))}
+                placeholder="ABC1234"
+                maxLength={7}
+                pattern="[A-Z]{3}[0-9]{4}"
+                title="La placa debe tener 3 letras y 4 numeros. Ejemplo: ABC1234"
                 required
               />
 

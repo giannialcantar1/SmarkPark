@@ -4,7 +4,7 @@ import re
 
 
 EMAIL_RE = re.compile(r"^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$", re.IGNORECASE)
-PLATE_RE = re.compile(r"^[A-Z0-9-]{5,10}$", re.IGNORECASE)
+PLATE_RE = re.compile(r"^[A-Z]{3}[0-9]{4}$", re.IGNORECASE)
 
 
 class Validators:
@@ -55,7 +55,7 @@ class Validators:
     def plate_errors(plate: str) -> list[str]:
         if Validators.validate_plate(plate):
             return []
-        return ["La placa debe tener entre 5 y 10 caracteres alfanumericos"]
+        return ["La placa debe tener 3 letras y 4 numeros. Ejemplo: ABC1234"]
 
     @staticmethod
     def validate_required_fields(payload: dict, *fields: str) -> tuple[bool, list[str]]:

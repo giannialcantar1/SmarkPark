@@ -38,6 +38,24 @@ const formatMoney = (value) => {
   }).format(Number.isFinite(amount) ? amount : 0)
 }
 
+const formatPlateInput = (value) => {
+  const raw = String(value || '').toUpperCase()
+  let plate = ''
+  let letterCount = 0
+  let digitCount = 0
+  for (const char of raw) {
+    if (letterCount < 3 && /[A-Z]/.test(char)) {
+      plate += char
+      letterCount += 1
+    } else if (letterCount === 3 && digitCount < 4 && /[0-9]/.test(char)) {
+      plate += char
+      digitCount += 1
+    }
+    if (letterCount === 3 && digitCount === 4) break
+  }
+  return plate
+}
+
 const formatDurationBreakdown = (minutes) => {
   const total = Math.max(0, Number(minutes || 0))
   const h = Math.floor(total / 60)
@@ -60,6 +78,13 @@ const getVehicleDurationMinutes = (vehicle) => {
 
 const getVehicleAmount = (vehicle) =>
   Number(vehicle.monto_total ?? vehicle.total_amount ?? vehicle.amount ?? vehicle.costo ?? 0) || 0
+
+const getSpaceLabel = (space) => {
+  const code = space.codigo || space.nombre || space.numero_mostrar || space.numero || 'Sin codigo'
+  const floor = space.piso || space.nivel || space.nivel_mostrar || space.tipo || ''
+  const status = space.ocupado || space.estado === 'ocupado' || space.status === 'occupied' ? 'Ocupado' : 'Disponible'
+  return `${code}${floor ? ` - Piso ${floor}` : ''} - ${status}`
+}
 
 /* --- palette ----------------------------------------------- */
 const C = {
@@ -235,11 +260,15 @@ const s = {
   backdrop: {
     position: 'fixed', inset: 0, background: 'rgba(1,4,9,0.78)',
     display: 'grid', placeItems: 'center', padding: 24, zIndex: 100,
+    overflowY: 'auto',
   },
   modal: {
     width: 'min(520px,100%)', background: C.card,
     border: `1px solid ${C.border}`, borderRadius: 16,
     padding: 28, boxShadow: '0 24px 48px rgba(0,0,0,0.32)',
+    maxHeight: 'calc(100dvh - 48px)',
+    overflowY: 'auto',
+    boxSizing: 'border-box',
   },
   modalTitle: { fontSize: 18, fontWeight: 700, color: '#fff', margin: '0 0 20px' },
   modalLabel: {
@@ -251,7 +280,11 @@ const s = {
     borderRadius: 10, color: '#fff', padding: '12px 14px', fontSize: 14,
     outline: 'none', boxSizing: 'border-box',
   },
-  modalActions: { display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 22 },
+  modalActions: {
+    display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 22,
+    position: 'sticky', bottom: -28, paddingTop: 14, paddingBottom: 2,
+    background: C.card,
+  },
   btnCancel: {
     padding: '10px 20px', borderRadius: 9, fontSize: 13, fontWeight: 600,
     background: C.cardDeep, color: C.textSoft,
@@ -294,9 +327,13 @@ export default function Vehiculos() {
   const { user } = useAuth()
   const currentRole = normalizeRole(user?.role)
   const cachedVehiculos = getCachedApiData('/api/vehiculos')
+  const cachedSpaces = getCachedApiData('/api/parking-spaces')
 
   const [vehiculos, setVehiculos] = useState(() =>
     Array.isArray(cachedVehiculos?.data) ? cachedVehiculos.data : [],
+  )
+  const [spaces, setSpaces] = useState(() =>
+    Array.isArray(cachedSpaces?.data) ? cachedSpaces.data : [],
   )
   const [loading,    setLoading]    = useState(() => !cachedVehiculos)
   const [saving,     setSaving]     = useState(false)
@@ -312,6 +349,15 @@ export default function Vehiculos() {
   const [form,       setForm]       = useState({ placa: '', propietario: '', modelo: '', espacio: '' })
   const [formEdit,   setFormEdit]   = useState({ placa: '', propietario: '', modelo: '' })
 
+  const loadSpaces = async ({ forceFresh = false } = {}) => {
+    try {
+      const payload = await apiGet('/api/parking-spaces', { forceFresh })
+      setSpaces(Array.isArray(payload?.data) ? payload.data : [])
+    } catch {
+      setSpaces([])
+    }
+  }
+
   const loadVehiculos = async ({ showLoader = true } = {}) => {
     if (showLoader) setLoading(true)
     setError(null)
@@ -325,7 +371,10 @@ export default function Vehiculos() {
     }
   }
 
-  useEffect(() => { loadVehiculos({ showLoader: !cachedVehiculos }) }, [])
+  useEffect(() => {
+    loadVehiculos({ showLoader: !cachedVehiculos })
+    loadSpaces({ forceFresh: !cachedSpaces })
+  }, [])
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -359,14 +408,14 @@ export default function Vehiculos() {
   const applyKnownVehicleToForm = (vehicle) => {
     setForm((current) => ({
       ...current,
-      placa: String(vehicle.placa || vehicle.plate || '').trim().toUpperCase(),
+      placa: formatPlateInput(vehicle.placa || vehicle.plate),
       propietario: vehicle.propietario || vehicle.owner_name || vehicle.owner || current.propietario,
       modelo: vehicle.modelo || vehicle.model || current.modelo,
     }))
   }
 
   const handleAddPlateChange = (value) => {
-    const nextPlate = String(value || '').trim().toUpperCase()
+    const nextPlate = formatPlateInput(value)
     const existing = vehiculos.find((vehicle) =>
       String(vehicle.placa || vehicle.plate || '').trim().toUpperCase() === nextPlate
     )
@@ -385,15 +434,25 @@ export default function Vehiculos() {
       .slice(0, 4)
   }, [form.placa, vehiculos])
 
+  const orderedSpaces = useMemo(
+    () => [...spaces].sort((a, b) => getSpaceLabel(a).localeCompare(getSpaceLabel(b), 'es')),
+    [spaces],
+  )
+
   const openEdit = (v) => {
     setEditingV(v)
-    setFormEdit({ placa: v.placa || '', propietario: v.propietario || '', modelo: v.modelo || '' })
+    setFormEdit({ placa: formatPlateInput(v.placa || ''), propietario: v.propietario || '', modelo: v.modelo || '' })
     setShowEdit(true)
   }
   const closeEdit = () => { setShowEdit(false); setEditingV(null) }
 
   const handleRegistrar = async (e) => {
     e.preventDefault(); setSaving(true); setError(null); setSuccess(null)
+    if (!/^[A-Z]{3}[0-9]{4}$/.test(form.placa)) {
+      setError('La placa debe tener 3 letras y 4 numeros. Ejemplo: ABC1234.')
+      setSaving(false)
+      return
+    }
     try {
       const res = await apiPost('/api/vehiculos/entrada', {
         placa: form.placa, propietario: form.propietario,
@@ -409,6 +468,11 @@ export default function Vehiculos() {
 
   const handleGuardarEdicion = async (e) => {
     e.preventDefault(); setSaving(true); setError(null); setSuccess(null)
+    if (!/^[A-Z]{3}[0-9]{4}$/.test(formEdit.placa)) {
+      setError('La placa debe tener 3 letras y 4 numeros. Ejemplo: ABC1234.')
+      setSaving(false)
+      return
+    }
     try {
       const res = await apiPut(`/api/vehiculos/${editingV.id}`, {
         placa: formEdit.placa, propietario: formEdit.propietario, modelo: formEdit.modelo,
@@ -623,21 +687,41 @@ export default function Vehiculos() {
                 { id: 'v-placa',    field: 'placa',       label: 'Placa',       req: true },
                 { id: 'v-prop',     field: 'propietario', label: 'Propietario', req: true },
                 { id: 'v-modelo',   field: 'modelo',      label: 'Modelo' },
-                { id: 'v-espacio',  field: 'espacio',     label: 'Espacio' },
+                { id: 'v-espacio',  field: 'espacio',     label: 'Espacio', req: true },
               ].map(({ id, field, label, req }) => (
                 <div key={field}>
                   <label htmlFor={id} style={s.modalLabel}>{label}</label>
-                  <input
-                    id={id}
-                    style={s.modalInput}
-                    value={form[field]}
-                    onChange={(e) =>
-                      field === 'placa'
-                        ? handleAddPlateChange(e.target.value)
-                        : setForm((c) => ({ ...c, [field]: e.target.value }))
-                    }
-                    required={req}
-                  />
+                  {field === 'espacio' ? (
+                    <select
+                      id={id}
+                      style={{ ...s.modalInput, cursor: 'pointer' }}
+                      value={form.espacio}
+                      onChange={(e) => setForm((c) => ({ ...c, espacio: e.target.value }))}
+                      required={req}
+                    >
+                      <option value="">{orderedSpaces.length ? 'Seleccione un espacio' : 'No hay espacios registrados'}</option>
+                      {orderedSpaces.map((space) => (
+                        <option key={space.id || getSpaceLabel(space)} value={space.id}>
+                          {getSpaceLabel(space)}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      id={id}
+                      style={s.modalInput}
+                      value={form[field]}
+                      onChange={(e) =>
+                        field === 'placa'
+                          ? handleAddPlateChange(e.target.value)
+                          : setForm((c) => ({ ...c, [field]: e.target.value }))
+                      }
+                      maxLength={field === 'placa' ? 7 : undefined}
+                      pattern={field === 'placa' ? '[A-Z]{3}[0-9]{4}' : undefined}
+                      title={field === 'placa' ? 'La placa debe tener 3 letras y 4 numeros. Ejemplo: ABC1234' : undefined}
+                      required={req}
+                    />
+                  )}
                   {field === 'placa' && addPlateSuggestions.length > 0 && (
                     <div style={{ display: 'grid', gap: 6, marginTop: 8 }}>
                       {addPlateSuggestions.map((vehicle) => (
@@ -695,7 +779,13 @@ export default function Vehiculos() {
                     id={id}
                     style={s.modalInput}
                     value={formEdit[field]}
-                    onChange={(e) => setFormEdit((c) => ({ ...c, [field]: e.target.value }))}
+                    onChange={(e) => setFormEdit((c) => ({
+                      ...c,
+                      [field]: field === 'placa' ? formatPlateInput(e.target.value) : e.target.value,
+                    }))}
+                    maxLength={field === 'placa' ? 7 : undefined}
+                    pattern={field === 'placa' ? '[A-Z]{3}[0-9]{4}' : undefined}
+                    title={field === 'placa' ? 'La placa debe tener 3 letras y 4 numeros. Ejemplo: ABC1234' : undefined}
                     required={req}
                   />
                 </div>

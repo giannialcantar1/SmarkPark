@@ -619,11 +619,11 @@ export default function AssignParkings() {
       if (letterCount < 3 && /[A-Z]/.test(char)) {
         filtered += char
         letterCount++
-      } else if (letterCount === 3 && digitCount < 3 && /[0-9]/.test(char)) {
+      } else if (letterCount === 3 && digitCount < 4 && /[0-9]/.test(char)) {
         filtered += char
         digitCount++
       }
-      if (letterCount === 3 && digitCount === 3) break
+      if (letterCount === 3 && digitCount === 4) break
     }
     setForm((f) => ({ ...f, placa: filtered }))
   }
@@ -640,8 +640,8 @@ export default function AssignParkings() {
     setError(null); setSuccess(null)
     if (!form.espacioId) { setError('Debe seleccionar un espacio.'); espacioRef.current?.focus(); return }
     if (selectedOccupied) { setError('El espacio seleccionado ya está ocupado. Elija otro espacio libre.'); return }
-    const plateRegex = /^[A-Z]{3}[0-9]{3}$/
-    if (!plateRegex.test(form.placa.trim())) { setError('La placa debe tener exactamente 3 letras y 3 números (ej: ABC123).'); return }
+    const plateRegex = /^[A-Z]{3}[0-9]{4}$/
+    if (!plateRegex.test(form.placa.trim())) { setError('La placa debe tener exactamente 3 letras y 4 numeros (ej: ABC1234).'); return }
     if (!form.propietario.trim()) { setError('El nombre del propietario es obligatorio.'); return }
     setSaving(true)
     try {
@@ -809,8 +809,8 @@ export default function AssignParkings() {
                         type="text"
                         value={form.placa}
                         onChange={handlePlateChange}
-                        placeholder="ABC123"
-                        maxLength={6}
+                        placeholder="ABC1234"
+                        maxLength={7}
                         required
                         style={s.inputBase}
                       />

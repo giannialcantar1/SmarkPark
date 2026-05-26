@@ -5,6 +5,7 @@ from flask import Blueprint, g, jsonify, request
 from utils.decorators import auth_required
 from utils.pagination import get_pagination_params, paginate_items
 from utils.supabase_client import insert_row, normalize_parking_space, normalize_text, select_rows, update_rows, utcnow_iso
+from utils.validators import normalize_plate, validate_plate
 
 
 visitantes_bp = Blueprint("visitantes", __name__, url_prefix="/api/visitantes")
@@ -77,7 +78,7 @@ def _set_space_status(space_id: str | None, status: str) -> None:
 def register_visitor_entry():
     payload = request.get_json(silent=True) or {}
     nombre = str(payload.get("nombre") or "").strip()
-    placa = str(payload.get("placa") or "").strip().upper()
+    placa = normalize_plate(payload.get("placa"))
     modelo = str(payload.get("modelo") or "").strip()
     cedula = str(payload.get("cedula") or "").strip()
     telefono = str(payload.get("telefono") or "").strip()
@@ -93,6 +94,8 @@ def register_visitor_entry():
         return jsonify({"success": False, "error": "El nombre es requerido"}), 400
     if not placa:
         return jsonify({"success": False, "error": "La placa es requerida"}), 400
+    if not validate_plate(placa):
+        return jsonify({"success": False, "error": "La placa debe tener 3 letras y 4 numeros. Ejemplo: ABC1234"}), 400
     if not espacio_id:
         return jsonify({"success": False, "error": "espacio_id es requerido"}), 400
 

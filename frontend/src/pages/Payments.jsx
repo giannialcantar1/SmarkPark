@@ -733,6 +733,30 @@ const Icon = ({ name, size = 16 }) => (
   </span>
 )
 
+function openBase64Pdf(pdfBase64, filename = 'factura-smartpark.pdf') {
+  if (!pdfBase64) return false
+  try {
+    const binary = window.atob(pdfBase64)
+    const bytes = new Uint8Array(binary.length)
+    for (let index = 0; index < binary.length; index += 1) {
+      bytes[index] = binary.charCodeAt(index)
+    }
+    const blob = new Blob([bytes], { type: 'application/pdf' })
+    const url = URL.createObjectURL(blob)
+    const popup = window.open(url, '_blank')
+    if (!popup) {
+      const link = document.createElement('a')
+      link.href = url
+      link.download = filename
+      link.click()
+    }
+    window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
+    return true
+  } catch {
+    return false
+  }
+}
+
 export default function Cobros() {
   const cachedVehicles = getCachedApiData('/api/vehiculos/activos')
   const cachedSpaces = getCachedApiData('/api/parking-spaces')
@@ -812,6 +836,51 @@ export default function Cobros() {
     }
   }, [page])
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('stripe') === 'cancel') {
+      setPaymentValidationError('Pago cancelado en Stripe.')
+      window.history.replaceState({}, '', window.location.pathname)
+      return
+    }
+    if (params.get('stripe') !== 'success') return
+
+    const checkoutSessionId = params.get('checkout_session_id')
+    if (!checkoutSessionId) return
+
+    const confirmStripePayment = async () => {
+      setProcessing(true)
+      setError(null)
+      try {
+        const response = await apiPost('/api/payments/stripe/confirm', {
+          checkout_session_id: checkoutSessionId,
+        })
+        const data = response?.data || {}
+        const status = data.status
+        if (status === 'paid') {
+          const invoice = data.invoice || {}
+          const openedInvoice = openBase64Pdf(invoice.pdf_base64, invoice.filename)
+          setSuccessMessage('Pago con Stripe confirmado correctamente.')
+          if (!openedInvoice && invoice.download_url) {
+            window.open(invoice.download_url, '_blank')
+          }
+          window.dispatchEvent(new CustomEvent('dashboard-refresh'))
+          await loadVehicles({ showLoader: false, forceFresh: true })
+        } else {
+          setError('Stripe recibio el pago, pero aun esta pendiente de confirmacion.')
+        }
+      } catch (err) {
+        setError(err.message || 'No se pudo confirmar el pago de Stripe.')
+      } finally {
+        setProcessing(false)
+        window.history.replaceState({}, '', window.location.pathname)
+        window.setTimeout(() => setSuccessMessage(null), 4000)
+      }
+    }
+
+    confirmStripePayment()
+  }, [])
+
   const spacesMap = useMemo(
     () => new Map(spaces.map((sp) => [String(sp.id), sp.codigo || String(sp.id).slice(0, 8)])),
     [spaces],
@@ -856,11 +925,11 @@ export default function Cobros() {
     )
   }, [transferData])
   const activePaymentReference = useMemo(() => {
-    if (paymentMethod === 'tarjeta') return buildCardReference(cardData.number, vehicleToConfirm)
+    if (paymentMethod === 'tarjeta') return 'stripe_checkout'
     if (paymentMethod === 'transferencia') return transferData.reference.trim()
     return ''
-  }, [cardData.number, paymentMethod, transferData.reference, vehicleToConfirm])
-  const isSubmitDisabled = paymentMethod === 'tarjeta' ? !isCardValid : !isTransferValid
+  }, [paymentMethod, transferData.reference])
+  const isSubmitDisabled = paymentMethod === 'tarjeta' ? false : !isTransferValid
 
   // Build a real-time invoice preview for the confirm modal
   const confirmInvoice = useMemo(() => {
@@ -932,14 +1001,6 @@ export default function Cobros() {
     }
 
     const trimmedReference = activePaymentReference.trim()
-    if (paymentMethod === 'tarjeta' && cardExpiryError) {
-      setPaymentValidationError(cardExpiryError)
-      return
-    }
-    if (paymentMethod === 'tarjeta' && !isCardValid) {
-      setPaymentValidationError('Completa todos los datos de la tarjeta.')
-      return
-    }
     if (paymentMethod === 'transferencia' && !isTransferValid) {
       setPaymentValidationError('Completa la referencia, la fecha y el comprobante de la transferencia.')
       return
@@ -948,6 +1009,17 @@ export default function Cobros() {
     setProcessing(true); setError(null)
     setPaymentValidationError('')
     try {
+      if (paymentMethod === 'tarjeta') {
+        const response = await apiPost('/api/payments/stripe/checkout-session', {
+          placa: vehicleToConfirm.placa,
+          amount: confirmInvoice?.totalRaw || 0,
+        })
+        const checkoutUrl = response?.data?.url
+        if (!checkoutUrl) throw new Error('Stripe no devolvio una URL de checkout.')
+        window.location.assign(checkoutUrl)
+        return
+      }
+
       const response = await apiPost('/api/vehiculos/salida', {
         placa: vehicleToConfirm.placa,
         metodo: paymentMethod,
@@ -1383,99 +1455,14 @@ export default function Cobros() {
                 >
                   <div className={paymentUi.panels}>
                     <section className={`${paymentUi.panel} ${paymentMethod === 'tarjeta' ? paymentUi.panelActive : paymentUi.panelHidden}`}>
-                      <CreditCardPreview
-                        cardData={cardData}
-                        brand={cardBrand}
-                        style={{
-                          width: '100%',
-                          maxWidth: '100%',
-                          transform: 'none',
-                        }}
-                      />
-
-                      <div className={paymentUi.fieldGrid}>
-                        <label className={paymentUi.field}>
-                          <span className={paymentUi.fieldLabel}>Numero de tarjeta</span>
-                          <input
-                            className={paymentUi.input}
-                            type="text"
-                            inputMode="numeric"
-                            placeholder="1234 5678 9012 3456"
-                            value={cardData.number}
-                            onChange={(event) => {
-                              handleCardChange('number', event.target.value)
-                              setPaymentValidationError('')
-                            }}
-                            disabled={processing}
-                          />
-                        </label>
-
-                        <label className={paymentUi.field}>
-                          <span className={paymentUi.fieldLabel}>Titular</span>
-                          <input
-                            className={paymentUi.input}
-                            type="text"
-                            placeholder="NOMBRE DEL TITULAR"
-                            value={cardData.holder}
-                            onChange={(event) => {
-                              handleCardChange('holder', event.target.value)
-                              setPaymentValidationError('')
-                            }}
-                            disabled={processing}
-                          />
-                        </label>
-
-                        <div
-                          className={paymentUi.row}
-                          style={{
-                            gridTemplateColumns: 'minmax(0, 3fr) minmax(0, 2fr)',
-                          }}
-                        >
-                          <label className={paymentUi.field}>
-                            <span className={paymentUi.fieldLabel}>Expiracion</span>
-                            <input
-                              className={`${paymentUi.input} ${cardExpiryError ? paymentUi.inputError : ''}`}
-                              type="text"
-                              inputMode="numeric"
-                              placeholder="MM/AA"
-                              value={cardData.expiry}
-                              onChange={(event) => {
-                                handleCardChange('expiry', event.target.value)
-                                setPaymentValidationError('')
-                              }}
-                              disabled={processing}
-                              aria-invalid={Boolean(cardExpiryError)}
-                            />
-                            {cardExpiryError && <span className={paymentUi.fieldError}>{cardExpiryError}</span>}
-                          </label>
-
-                          <label className={paymentUi.field}>
-                            <span className={paymentUi.fieldLabel}>CVV</span>
-                            <input
-                              className={paymentUi.input}
-                              type="password"
-                              inputMode="numeric"
-                              placeholder="123"
-                              value={cardData.cvv}
-                              onChange={(event) => {
-                                handleCardChange('cvv', event.target.value)
-                                setPaymentValidationError('')
-                              }}
-                              disabled={processing}
-                            />
-                          </label>
-                        </div>
-
-                        <label className={paymentUi.checkbox}>
-                          <input
-                            type="checkbox"
-                            checked={cardSaved}
-                            onChange={(event) => setCardSaved(event.target.checked)}
-                            disabled={processing}
-                          />
-                          <span>Guardar para futuros pagos</span>
-                        </label>
+                      <div className={paymentUi.bankCard}>
+                        <div className={paymentUi.bankRow}><span>Proveedor</span><strong>Stripe Checkout</strong></div>
+                        <div className={paymentUi.bankRow}><span>Monto</span><strong>{confirmInvoice?.total || '--'}</strong></div>
+                        <div className={paymentUi.bankRow}><span>Seguridad</span><strong>Pago con tarjeta fuera de SmartPark</strong></div>
                       </div>
+                      <p style={{ margin: 0, color: '#94a3b8', fontSize: 13, lineHeight: 1.55 }}>
+                        Al continuar, Stripe abrira su pagina segura para capturar la tarjeta. SmartPark no guarda numeros de tarjeta ni CVV.
+                      </p>
                     </section>
 
                     <section className={`${paymentUi.panel} ${paymentMethod === 'transferencia' ? paymentUi.panelActive : paymentUi.panelHidden}`}>
@@ -1560,10 +1547,10 @@ export default function Cobros() {
                     <button
                       type="submit"
                       className={paymentUi.payButton}
-                      disabled={processing || isSubmitDisabled || (paymentMethod === 'tarjeta' && Boolean(cardExpiryError))}
+                      disabled={processing || isSubmitDisabled}
                       style={{ width: '100%' }}
                     >
-                      {processing ? 'Procesando...' : `Pagar ${confirmInvoice.total}`}
+                      {processing ? 'Procesando...' : paymentMethod === 'tarjeta' ? `Pagar con Stripe ${confirmInvoice.total}` : `Pagar ${confirmInvoice.total}`}
                     </button>
                   </div>
                 </form>

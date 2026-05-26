@@ -30,15 +30,25 @@ const INITIAL_FORM = {
 
 const normalizeText = (value) => String(value || '').trim()
 const normalizePlate = (value) => normalizeText(value).toUpperCase()
-const PLATE_REGEX = /^[A-Z]{3}-\d{3}$/
+const onlyDigits = (value, maxLength) => String(value || '').replace(/\D/g, '').slice(0, maxLength)
+const PLATE_REGEX = /^[A-Z]{3}\d{4}$/
 
 const formatPlateInput = (value) => {
-  const cleaned = String(value || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6)
-  const letters = cleaned.slice(0, 3).replace(/[^A-Z]/g, '')
-  const numbers = cleaned.slice(3).replace(/[^0-9]/g, '')
-  if (!letters && !numbers) return ''
-  if (letters.length < 3) return letters
-  return `${letters}${numbers ? `-${numbers}` : '-'}`
+  const raw = String(value || '').toUpperCase()
+  let formatted = ''
+  let letterCount = 0
+  let digitCount = 0
+  for (const char of raw) {
+    if (letterCount < 3 && /[A-Z]/.test(char)) {
+      formatted += char
+      letterCount += 1
+    } else if (letterCount === 3 && digitCount < 4 && /[0-9]/.test(char)) {
+      formatted += char
+      digitCount += 1
+    }
+    if (letterCount === 3 && digitCount === 4) break
+  }
+  return formatted
 }
 
 const parseDate = (value) => {
@@ -444,7 +454,16 @@ export default function Visitors() {
   }, [activeVisitors, availableSpaces])
 
   const handleChange = (field) => (event) => {
-    setForm((current) => ({ ...current, [field]: event.target.value }))
+    const value = event.target.value
+    if (field === 'cedula') {
+      setForm((current) => ({ ...current, cedula: onlyDigits(value, 11) }))
+      return
+    }
+    if (field === 'phone') {
+      setForm((current) => ({ ...current, phone: onlyDigits(value, 10) }))
+      return
+    }
+    setForm((current) => ({ ...current, [field]: value }))
   }
 
   const applyKnownVisitor = (visitor) => {
@@ -494,7 +513,13 @@ export default function Visitors() {
     if (!normalizeText(form.fullName)) return setError('El nombre del visitante es obligatorio.')
     if (!normalizePlate(form.plate)) return setError('La placa es obligatoria.')
     if (!PLATE_REGEX.test(normalizePlate(form.plate))) {
-      return setError('La placa debe tener el formato ABC-123.')
+      return setError('La placa debe tener el formato ABC1234.')
+    }
+    if (form.cedula && form.cedula.length !== 11) {
+      return setError('La cedula debe tener 11 digitos.')
+    }
+    if (form.phone && form.phone.length !== 10) {
+      return setError('El telefono debe tener 10 digitos.')
     }
     if (!form.spaceId) return setError('Selecciona un espacio temporal.')
     const selectedSpace = spaces.find((space) => space.id === String(form.spaceId))
@@ -590,6 +615,8 @@ export default function Visitors() {
               <label style={styles.label}>
                 <span>Cedula</span>
                 <input
+                  type="text"
+                  inputMode="numeric"
                   value={form.cedula}
                   onChange={handleChange('cedula')}
                   style={styles.input}
@@ -602,6 +629,8 @@ export default function Visitors() {
               <label style={styles.label}>
                 <span>Telefono</span>
                 <input
+                  type="tel"
+                  inputMode="numeric"
                   value={form.phone}
                   onChange={handleChange('phone')}
                   style={styles.input}
@@ -617,10 +646,10 @@ export default function Visitors() {
                   value={form.plate}
                   onChange={handlePlateChange}
                   style={styles.input}
-                  placeholder="ABC-123"
+                  placeholder="ABC1234"
                   maxLength={7}
-                  pattern="[A-Z]{3}-[0-9]{3}"
-                  title="La placa debe tener 3 letras, guion y 3 numeros. Ejemplo: ABC-123"
+                  pattern="[A-Z]{3}[0-9]{4}"
+                  title="La placa debe tener 3 letras y 4 numeros. Ejemplo: ABC1234"
                 />
                 {autofillPlate && (
                   <span style={styles.helperText}>

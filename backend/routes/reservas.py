@@ -5,6 +5,7 @@ from flask import Blueprint, g, jsonify, request
 from services import ReservationService
 from utils.decorators import auth_required
 from utils.supabase_client import normalize_text, parse_datetime
+from utils.validators import normalize_plate, validate_plate
 
 
 reservas_bp = Blueprint("reservas", __name__, url_prefix="/api/reservas")
@@ -16,6 +17,9 @@ service = ReservationService()
 def create_reservation():
     payload = request.get_json(silent=True) or {}
     user_id = str(payload.get("user_id") or g.current_user_id or "").strip()
+    placa = normalize_plate(payload.get("placa")) if payload.get("placa") else None
+    if placa and not validate_plate(placa):
+        return jsonify({"success": False, "error": "La placa debe tener 3 letras y 4 numeros. Ejemplo: ABC1234"}), 400
     try:
         reservation = service.create_reservation(
             garage_id=g.current_user_garage_id,
@@ -24,7 +28,7 @@ def create_reservation():
             fecha_salida=str(payload.get("fecha_salida") or "").strip(),
             espacio_id=str(payload.get("espacio_id") or "").strip(),
             vehicle_id=str(payload.get("vehicle_id") or "").strip() or None,
-            placa=str(payload.get("placa") or "").strip() or None,
+            placa=placa,
         )
     except ValueError as exc:
         return jsonify({"success": False, "error": str(exc)}), 400
