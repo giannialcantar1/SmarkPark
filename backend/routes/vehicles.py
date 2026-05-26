@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import secrets
+
 from flask import Blueprint, g, jsonify, request
 from flask_cors import cross_origin
 
@@ -14,6 +16,7 @@ from utils.supabase_client import (
     normalize_vehicle,
     row_belongs_to_user,
     select_rows,
+    update_rows,
     utcnow_iso,
 )
 
@@ -199,6 +202,90 @@ def list_active_vehicles_legacy():
 @auth_required
 def search_vehicles():
     return controller.search()
+
+
+def _generate_vehicle_qr_code() -> str:
+    return f"SPK-{secrets.token_urlsafe(9).replace('_', '').replace('-', '').upper()[:12]}"
+
+
+def _is_qr_code_available(code: str, vehicle_id: str) -> bool:
+    rows = select_rows(
+        "vehicles",
+        filters=[{"column": "qr_code", "value": code, "optional": True}],
+        order_candidates=["created_at"],
+        desc=True,
+        limit=5,
+    )
+    return not any(str(row.get("id") or "") != str(vehicle_id) for row in rows)
+
+
+def _resolve_vehicle_for_qr(vehicle_id: str) -> dict | None:
+    current = controller.vehicle_service.get_vehicle(vehicle_id=vehicle_id)
+    if current:
+        return current
+
+    session_rows = select_rows(
+        "parking_sessions",
+        filters=[{"column": "id", "value": vehicle_id, "optional": False}],
+        order_candidates=["created_at", "entrada", "entry_time"],
+        desc=True,
+        limit=1,
+    )
+    if not session_rows:
+        return None
+
+    session = normalize_session(session_rows[0])
+    resolved_vehicle_id = session.get("vehicle_id") or session.get("vehiculo_id")
+    if not resolved_vehicle_id:
+        return None
+    return controller.vehicle_service.get_vehicle(vehicle_id=str(resolved_vehicle_id))
+
+
+@vehicles_bp.route("/<vehicle_id>/qr", methods=["POST", "OPTIONS"])
+@cross_origin()
+@auth_required
+def generate_vehicle_qr(vehicle_id: str):
+    if request.method == "OPTIONS":
+        return ("", 204)
+
+    current = _resolve_vehicle_for_qr(vehicle_id)
+    if not current:
+        return jsonify({"success": False, "error": "Vehiculo no encontrado"}), 404
+
+    resolved_vehicle_id = str(current.get("id") or vehicle_id)
+
+    if normalize_text(current.get("garage_id")) != normalize_text(g.current_user_garage_id):
+        return jsonify({"success": False, "error": "No autorizado para generar QR de ese vehiculo"}), 403
+
+    can_manage = g.current_user_role in {"admin", "administrador", "portero"}
+    if not can_manage and not row_belongs_to_user(current, g.current_user_id, g.current_user_email):
+        return jsonify({"success": False, "error": "No autorizado para generar QR de ese vehiculo"}), 403
+
+    payload = request.get_json(silent=True) or {}
+    regenerate = bool(payload.get("regenerate"))
+    existing_code = str(current.get("qr_code") or "").strip().upper()
+    code = existing_code if existing_code and not regenerate else ""
+
+    for _ in range(8):
+        if code and _is_qr_code_available(code, resolved_vehicle_id):
+            break
+        code = _generate_vehicle_qr_code()
+    else:
+        return jsonify({"success": False, "error": "No fue posible generar un QR unico"}), 500
+
+    if code != existing_code:
+        updated_rows = update_rows(
+            "vehicles",
+            payload={"qr_code": code, "updated_at": utcnow_iso()},
+            filters=[{"column": "id", "value": resolved_vehicle_id, "optional": False}],
+        )
+        if not updated_rows or not updated_rows[0].get("qr_code"):
+            return jsonify({"success": False, "error": "La columna qr_code no existe en vehicles. Ejecuta la migracion SQL."}), 500
+        current = normalize_vehicle(updated_rows[0])
+    else:
+        current = normalize_vehicle({**current, "qr_code": code})
+
+    return jsonify({"success": True, "message": "QR generado", "data": current, "qr_code": code})
 
 
 @vehicles_bp.put("/<vehicle_id>")

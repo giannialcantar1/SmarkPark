@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import jsQR from 'jsqr'
 
 import { apiPost } from '../lib/api'
 
@@ -243,6 +244,91 @@ function normalizeCode(value) {
   return String(value || '').trim().toUpperCase()
 }
 
+async function requestCameraStream() {
+  if (!navigator.mediaDevices?.getUserMedia) {
+    const unsupported = new Error('getUserMedia no esta disponible en este navegador.')
+    unsupported.name = 'NotSupportedError'
+    throw unsupported
+  }
+
+  const attempts = [
+    {
+      video: {
+        facingMode: { ideal: 'environment' },
+        width: { ideal: 1280 },
+        height: { ideal: 720 },
+      },
+      audio: false,
+    },
+    {
+      video: {
+        width: { ideal: 1280 },
+        height: { ideal: 720 },
+      },
+      audio: false,
+    },
+    { video: true, audio: false },
+  ]
+
+  let lastError = null
+  for (const constraints of attempts) {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia(constraints)
+      console.info('[QRAccess] Camara obtenida', {
+        tracks: stream.getVideoTracks().map((track) => ({
+          label: track.label,
+          readyState: track.readyState,
+          settings: track.getSettings?.(),
+        })),
+      })
+      return stream
+    } catch (error) {
+      lastError = error
+      console.error('[QRAccess] Error getUserMedia:', error?.name || 'UnknownError', error?.message || String(error))
+      console.error('[QRAccess] Constraints usadas:', JSON.stringify(constraints))
+      const errorName = String(error?.name || '').toLowerCase()
+      if (errorName.includes('notallowed') || errorName.includes('security')) {
+        throw error
+      }
+    }
+  }
+  throw lastError || new Error('No se pudo iniciar la camara.')
+}
+
+function waitForVideoMetadata(video) {
+  if (video.readyState >= 1 && video.videoWidth > 0) return Promise.resolve()
+
+  return new Promise((resolve) => {
+    const timeout = window.setTimeout(resolve, 1800)
+    const done = () => {
+      window.clearTimeout(timeout)
+      video.removeEventListener('loadedmetadata', done)
+      video.removeEventListener('canplay', done)
+      resolve()
+    }
+    video.addEventListener('loadedmetadata', done, { once: true })
+    video.addEventListener('canplay', done, { once: true })
+  })
+}
+
+async function attachStreamToVideo(video, stream) {
+  video.muted = true
+  video.autoplay = true
+  video.playsInline = true
+  video.srcObject = stream
+
+  await waitForVideoMetadata(video)
+  await video.play()
+
+  console.info('[QRAccess] Video de camara activo', {
+    readyState: video.readyState,
+    paused: video.paused,
+    width: video.videoWidth,
+    height: video.videoHeight,
+    hasStream: Boolean(video.srcObject),
+  })
+}
+
 export default function QRAccess() {
   const videoRef = useRef(null)
   const canvasRef = useRef(null)
@@ -254,7 +340,6 @@ export default function QRAccess() {
 
   const [manualCode, setManualCode] = useState('')
   const [scannerStatus, setScannerStatus] = useState('Inicializando camara...')
-  const [scannerError, setScannerError] = useState('')
   const [verifying, setVerifying] = useState(false)
   const [result, setResult] = useState(null)
 
@@ -276,20 +361,12 @@ export default function QRAccess() {
     const startScanner = async () => {
       if (typeof window === 'undefined') return
       if (!navigator.mediaDevices?.getUserMedia) {
-        setScannerStatus('Tu navegador no permite acceder a la camara.')
-        setScannerError('Activa la entrada manual para verificar el acceso.')
+        setScannerStatus('')
         return
       }
 
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: {
-            facingMode: { ideal: 'environment' },
-            width: { ideal: 1280 },
-            height: { ideal: 720 },
-          },
-          audio: false,
-        })
+        const stream = await requestCameraStream()
 
         if (cancelled) {
           stream.getTracks().forEach((track) => track.stop())
@@ -298,32 +375,33 @@ export default function QRAccess() {
 
         streamRef.current = stream
         if (videoRef.current) {
-          videoRef.current.srcObject = stream
-          await videoRef.current.play().catch(() => {
-            setScannerError('La camara fue concedida, pero el navegador bloqueo la reproduccion del video.')
-          })
+          try {
+            await attachStreamToVideo(videoRef.current, stream)
+          } catch (error) {
+            console.warn('[QRAccess] No se pudo reproducir el video de camara', {
+              name: error?.name,
+              message: error?.message,
+            })
+          }
         }
 
-        if (!('BarcodeDetector' in window)) {
+        if ('BarcodeDetector' in window) {
+          try {
+            detectorRef.current = new window.BarcodeDetector({ formats: ['qr_code'] })
+            setScannerStatus('Camara activa. Enfoca el QR frente al lector.')
+          } catch {
+            detectorRef.current = null
+            setScannerStatus('Camara activa. Escaneando QR con lector alternativo.')
+          }
+        } else {
           detectorRef.current = null
-          setScannerStatus('Camara activa. Escaneo automatico no disponible en este navegador.')
-          setScannerError('Usa la entrada manual o abre la pagina en un navegador con BarcodeDetector.')
-          return
+          setScannerStatus('Camara activa. Escaneando QR con lector alternativo.')
         }
-
-        const detector = new window.BarcodeDetector({
-          formats: ['qr_code', 'code_128', 'code_39', 'ean_13', 'upc_a'],
-        })
-        detectorRef.current = detector
-
-        setScannerError('')
-        setScannerStatus('Camara activa. Enfoca el QR o codigo frente al lector.')
 
         intervalRef.current = window.setInterval(async () => {
           const video = videoRef.current
           const canvas = canvasRef.current
-          const detectorInstance = detectorRef.current
-          if (!video || !canvas || !detectorInstance) return
+          if (!video || !canvas) return
           if (video.readyState < 2 || verificationLockRef.current) return
 
           const ctx = canvas.getContext('2d', { willReadFrequently: true })
@@ -334,8 +412,21 @@ export default function QRAccess() {
           ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
 
           try {
-            const detections = await detectorInstance.detect(canvas)
-            const detectedValue = normalizeCode(detections?.[0]?.rawValue || '')
+            let detectedValue = ''
+            const detectorInstance = detectorRef.current
+            if (detectorInstance) {
+              const detections = await detectorInstance.detect(canvas)
+              detectedValue = normalizeCode(detections?.[0]?.rawValue || '')
+            }
+
+            if (!detectedValue) {
+              const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
+              const qr = jsQR(imageData.data, canvas.width, canvas.height, {
+                inversionAttempts: 'attemptBoth',
+              })
+              detectedValue = normalizeCode(qr?.data || '')
+            }
+
             if (!detectedValue) return
 
             const now = Date.now()
@@ -352,8 +443,7 @@ export default function QRAccess() {
           }
         }, 800)
       } catch (error) {
-        setScannerStatus('No se pudo iniciar la camara.')
-        setScannerError(error?.message || 'Revisa permisos del navegador para usar el lector QR.')
+        setScannerStatus('')
       }
     }
 
@@ -446,28 +536,6 @@ export default function QRAccess() {
                 <div style={styles.scannerLine} />
               </div>
             </div>
-
-            <div style={styles.statusRow}>
-              <span style={styles.statusChip(scannerError ? 'error' : 'info')}>
-                <span className="material-symbols-outlined" style={{ fontSize: 16 }}>
-                  {scannerError ? 'warning' : 'videocam'}
-                </span>
-                {scannerStatus}
-              </span>
-              {scannerError && <p style={styles.helper}>{scannerError}</p>}
-            </div>
-
-            <button
-              type="button"
-              style={styles.secondaryButton}
-              onClick={() => {
-                setScannerError('')
-                setScannerStatus('Reintentando lectura en camara...')
-                window.location.reload()
-              }}
-            >
-              Reiniciar lector
-            </button>
             <canvas ref={canvasRef} style={{ display: 'none' }} />
           </div>
         </article>

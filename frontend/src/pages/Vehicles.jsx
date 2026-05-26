@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import QRCode from 'qrcode'
 
 import NotificationsBell from '../components/NotificationsBell'
 import { apiGet, apiPost, apiPut, getCachedApiData } from '../lib/api'
@@ -37,6 +38,8 @@ const formatMoney = (value) => {
     style: 'currency', currency: 'DOP', minimumFractionDigits: 2,
   }).format(Number.isFinite(amount) ? amount : 0)
 }
+
+const getVehiclePlate = (vehicle) => String(vehicle?.placa || vehicle?.plate || '').trim().toUpperCase()
 
 const formatPlateInput = (value) => {
   const raw = String(value || '').toUpperCase()
@@ -294,6 +297,21 @@ const s = {
     padding: '10px 20px', borderRadius: 9, fontSize: 13, fontWeight: 700,
     background: C.primary, color: '#080f1e', boxShadow: '0 14px 34px rgba(56,189,248,0.18)', border: 'none', cursor: 'pointer',
   },
+  qrPreview: {
+    display: 'grid', placeItems: 'center', gap: 14,
+    padding: 18, borderRadius: 14, background: '#fff',
+    border: `1px solid ${C.border}`, marginBottom: 16,
+  },
+  qrImage: { width: 240, height: 240, display: 'block' },
+  qrCodeText: {
+    margin: 0, color: '#0f172a', fontSize: 13, fontWeight: 800,
+    letterSpacing: '0.08em', wordBreak: 'break-all', textAlign: 'center',
+  },
+  qrMeta: {
+    display: 'grid', gap: 8, padding: '12px 14px', borderRadius: 10,
+    background: C.cardDeep, border: `1px solid ${C.border}`, color: C.textSoft,
+    fontSize: 13, marginBottom: 12,
+  },
 
   /* salida resumen */
   resumenRow: {
@@ -344,6 +362,8 @@ export default function Vehiculos() {
   const [showEdit,   setShowEdit]   = useState(false)
   const [editingV,   setEditingV]   = useState(null)
   const [salidaRes,  setSalidaRes]  = useState(null)
+  const [qrModal,    setQrModal]    = useState(null)
+  const [qrLoading,  setQrLoading]  = useState(false)
   const [search,     setSearch]     = useState('')
   const [filtro,     setFiltro]     = useState('todos')
   const [form,       setForm]       = useState({ placa: '', propietario: '', modelo: '', espacio: '' })
@@ -446,6 +466,71 @@ export default function Vehiculos() {
   }
   const closeEdit = () => { setShowEdit(false); setEditingV(null) }
 
+  const openQrModal = async (vehiculo, { regenerate = false } = {}) => {
+    setQrLoading(true)
+    setError(null)
+    setSuccess(null)
+    try {
+      const response = await apiPost(`/api/vehicles/${vehiculo.id}/qr`, { regenerate })
+      const updatedVehicle = response?.data || {}
+      const qrCode = String(response?.qr_code || updatedVehicle.qr_code || vehiculo.qr_code || '').trim().toUpperCase()
+      const qrImage = await QRCode.toDataURL(qrCode, {
+        errorCorrectionLevel: 'M',
+        margin: 2,
+        width: 320,
+        color: { dark: '#020617', light: '#ffffff' },
+      })
+      const nextVehicle = { ...vehiculo, ...updatedVehicle, qr_code: qrCode }
+      setVehiculos((current) => current.map((item) => (item.id === vehiculo.id ? nextVehicle : item)))
+      setQrModal({ vehicle: nextVehicle, code: qrCode, image: qrImage })
+    } catch (err) {
+      setError(err.message || 'No se pudo generar el QR del vehiculo.')
+    } finally {
+      setQrLoading(false)
+    }
+  }
+
+  const downloadQr = () => {
+    if (!qrModal?.image) return
+    const link = document.createElement('a')
+    link.href = qrModal.image
+    link.download = `smartpark-qr-${getVehiclePlate(qrModal.vehicle) || qrModal.code}.png`
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+  }
+
+  const printQr = () => {
+    if (!qrModal?.image) return
+    const plate = getVehiclePlate(qrModal.vehicle) || 'Vehiculo'
+    const printWindow = window.open('', '_blank', 'noopener,noreferrer,width=420,height=620')
+    if (!printWindow) return
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>QR SmartPark ${plate}</title>
+          <style>
+            body { font-family: Arial, sans-serif; display: grid; place-items: center; min-height: 100vh; margin: 0; color: #0f172a; }
+            main { text-align: center; }
+            img { width: 280px; height: 280px; }
+            h1 { margin: 0 0 8px; font-size: 24px; }
+            p { margin: 6px 0; font-size: 14px; letter-spacing: 0.08em; font-weight: 700; }
+          </style>
+        </head>
+        <body>
+          <main>
+            <h1>SmartPark</h1>
+            <img src="${qrModal.image}" alt="QR SmartPark ${plate}" />
+            <p>${plate}</p>
+            <p>${qrModal.code}</p>
+          </main>
+          <script>window.onload = () => { window.print(); window.close(); }</script>
+        </body>
+      </html>
+    `)
+    printWindow.document.close()
+  }
+
   const handleRegistrar = async (e) => {
     e.preventDefault(); setSaving(true); setError(null); setSuccess(null)
     if (!/^[A-Z]{3}[0-9]{4}$/.test(form.placa)) {
@@ -454,14 +539,13 @@ export default function Vehiculos() {
       return
     }
     try {
-      const res = await apiPost('/api/vehiculos/entrada', {
+      await apiPost('/api/vehiculos/entrada', {
         placa: form.placa, propietario: form.propietario,
         modelo: form.modelo, espacio_id: form.espacio,
       })
       setSuccess('Vehículo registrado correctamente.')
       closeAdd()
-      if (res?.data) setVehiculos((c) => [res.data, ...c])
-      else await loadVehiculos()
+      await loadVehiculos({ showLoader: false })
     } catch (err) { setError(err.message || 'No se pudo registrar el vehículo.') }
     finally { setSaving(false) }
   }
@@ -620,6 +704,15 @@ export default function Vehiculos() {
                 {formatDateTime(vehiculo.hora_entrada)}
               </span>
               <div style={s.actionGroup}>
+                <button
+                  type="button"
+                  style={s.actionBtn}
+                  onClick={() => openQrModal(vehiculo)}
+                  title={vehiculo.qr_code ? 'Ver QR' : 'Generar QR'}
+                  disabled={qrLoading}
+                >
+                  <Icon name="qr_code_2" size={16} color={C.textSoft} />
+                </button>
                 {isDentro && currentRole !== ROLES.USUARIO && (
                   <button
                     type="button"
@@ -797,6 +890,32 @@ export default function Vehiculos() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* -- Modal: QR del Vehiculo -- */}
+      {qrModal && (
+        <div style={s.backdrop} onClick={() => setQrModal(null)}>
+          <div style={s.modal} onClick={(e) => e.stopPropagation()}>
+            <h2 style={s.modalTitle}>QR de acceso</h2>
+            <div style={s.qrPreview}>
+              <img src={qrModal.image} alt={`QR SmartPark ${getVehiclePlate(qrModal.vehicle)}`} style={s.qrImage} />
+              <p style={s.qrCodeText}>{qrModal.code}</p>
+            </div>
+            <div style={s.qrMeta}>
+              <span><strong>Placa:</strong> {getVehiclePlate(qrModal.vehicle) || 'Sin placa'}</span>
+              <span><strong>Propietario:</strong> {qrModal.vehicle.propietario || qrModal.vehicle.owner_name || 'Sin propietario'}</span>
+              <span><strong>Modelo:</strong> {qrModal.vehicle.modelo || qrModal.vehicle.model || 'Sin modelo'}</span>
+            </div>
+            <div style={s.modalActions}>
+              <button type="button" style={s.btnCancel} onClick={() => setQrModal(null)}>Cerrar</button>
+              <button type="button" style={s.btnCancel} onClick={() => openQrModal(qrModal.vehicle, { regenerate: true })} disabled={qrLoading}>
+                Regenerar
+              </button>
+              <button type="button" style={s.btnCancel} onClick={downloadQr}>Descargar PNG</button>
+              <button type="button" style={s.btnSave} onClick={printQr}>Imprimir</button>
+            </div>
           </div>
         </div>
       )}
